@@ -1,5 +1,18 @@
 // main.js - Handles the main page functionality
 
+// Register service worker for PWA functionality
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/service-worker.js')
+            .then(function(registration) {
+                console.log('ServiceWorker registration successful with scope: ', registration.scope);
+            })
+            .catch(function(err) {
+                console.log('ServiceWorker registration failed: ', err);
+            });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const settingsForm = document.getElementById('settings-form');
     const settingsSection = document.getElementById('settings-section');

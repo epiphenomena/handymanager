@@ -30,6 +30,12 @@ h2 {
     display: inline-block;
 }
 
+h3 {
+    color: #333;
+    margin-top: 24px;
+    margin-bottom: 12px;
+}
+
 .header-controls {
     display: flex;
     justify-content: space-between;
@@ -107,6 +113,22 @@ button:hover, .primary-btn:hover, .secondary-btn:hover, .cancel-btn:hover {
 
 .cancel-btn:hover {
     background-color: #757575;
+}
+
+.pwa-instructions {
+    margin-top: 24px;
+    padding: 16px;
+    background-color: #e8f5e9;
+    border-radius: 4px;
+    border-left: 4px solid #4CAF50;
+}
+
+.pwa-instructions ul {
+    padding-left: 20px;
+}
+
+.pwa-instructions li {
+    margin-bottom: 8px;
 }
 
 #jobs-list {
