@@ -31,13 +31,9 @@
                     <h3>Install as App</h3>
                     <div id="pwa-instructions">
                         <ul>
-                            <li>
-                                <strong>Android Chrome:</strong> Tap the menu (three dots) and select "Add to Home screen"
-                                <br><button id="install-button" style="margin-top: 5px;">Install App (Android only)</button>
-                            </li>
+                            <li><strong>Android Chrome:</strong> Tap the menu (three dots) and select "Add to Home screen"</li>
                             <li><strong>iOS Safari:</strong> Tap the share button and select "Add to Home Screen"</li>
                         </ul>
-                        <p><em>Note: The install button only works on Android. iOS users must follow the manual instructions above.</em></p>
                     </div>
                 </div>
             </div>
@@ -55,42 +51,9 @@
 
     <script src="js/main.js"></script>
     <script>
-        // Handle PWA installation
-        let deferredPrompt;
-
-        window.addEventListener('beforeinstallprompt', (e) => {
-            // Prevent Chrome 67 and earlier from automatically showing the prompt
-            e.preventDefault();
-            // Stash the event so it can be triggered later
-            deferredPrompt = e;
-            // Show the install button
-            const installButton = document.getElementById('install-button');
-            installButton.style.display = 'block';
-        });
-
+        // No PWA installation functionality needed
         document.addEventListener('DOMContentLoaded', function() {
-            const installButton = document.getElementById('install-button');
-
-            // Handle install button click
-            installButton.addEventListener('click', (e) => {
-                // Hide the install button
-                installButton.style.display = 'none';
-
-                // Show the install prompt
-                if (deferredPrompt) {
-                    deferredPrompt.prompt();
-
-                    // Wait for the user to respond to the prompt
-                    deferredPrompt.userChoice.then((choiceResult) => {
-                        if (choiceResult.outcome === 'accepted') {
-                            console.log('User accepted the install prompt');
-                        } else {
-                            console.log('User dismissed the install prompt');
-                        }
-                        deferredPrompt = null;
-                    });
-                }
-            });
+            // All functionality is in main.js
         });
     </script>
 </body>
