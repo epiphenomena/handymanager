@@ -2,13 +2,8 @@
 
 const CACHE_NAME = 'handymanager-v1';
 const urlsToCache = [
-    '/',
-    '/new-job.html',
-    '/job-details.html',
-    '/css/styles.css',
-    '/js/main.js',
-    '/js/new-job.js',
-    '/js/job-details.js',
+    '/assets/icon-192.jpg',
+    '/assets/icon-512.jpg',
     '/favicon.ico',
     '/apple-touch-icon.png'
 ];
