@@ -60,7 +60,7 @@ input[type="datetime-local"] {
     height: 44px;
 }
 
-button, .primary-btn, .secondary-btn {
+button, .primary-btn, .secondary-btn, .cancel-btn {
     background-color: #4CAF50;
     color: white;
     border: none;
@@ -76,18 +76,37 @@ button, .primary-btn, .secondary-btn {
     box-sizing: border-box;
 }
 
-button:hover, .primary-btn:hover, .secondary-btn:hover {
+button:hover, .primary-btn:hover, .secondary-btn:hover, .cancel-btn:hover {
     background-color: #45a049;
 }
 
 .secondary-btn {
-    background-color: #2196F3;
+    background-color: #9e9e9e;
     width: auto;
     padding: 8px 16px;
 }
 
 .secondary-btn:hover {
-    background-color: #1976D2;
+    background-color: #757575;
+}
+
+.cancel-btn {
+    background-color: #9e9e9e;
+    color: white;
+    text-decoration: none;
+    display: inline-block;
+    text-align: center;
+    padding: 12px 24px;
+    font-size: 16px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.cancel-btn:hover {
+    background-color: #757575;
 }
 
 #jobs-list {
@@ -113,20 +132,12 @@ button:hover, .primary-btn:hover, .secondary-btn:hover {
     color: #4CAF50;
 }
 
-.back-link {
-    display: block;
-    text-align: center;
-    margin-top: 24px;
-    color: #4CAF50;
-    text-decoration: none;
-}
-
 @media (min-width: 600px) {
     .container {
         max-width: 600px;
     }
     
-    .secondary-btn {
+    .secondary-btn, .cancel-btn {
         width: auto;
     }
 }
