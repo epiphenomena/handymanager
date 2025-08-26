@@ -36,28 +36,14 @@ if (!verifyToken($token)) {
     sendJsonResponse(['success' => false, 'message' => 'Invalid token']);
 }
 
-// Load data
-$data = initDataStorage();
+// Create new job in database
+$success = createJob($repName, $startTime, $location);
 
-// Initialize jobs array if it doesn't exist
-if (!isset($data['jobs'])) {
-    $data['jobs'] = [];
+if ($success) {
+    // Get the ID of the newly created job
+    $newJobId = getDbConnection()->lastInsertId();
+    sendJsonResponse(['success' => true, 'message' => 'Job created successfully', 'job_id' => $newJobId]);
+} else {
+    sendJsonResponse(['success' => false, 'message' => 'Failed to create job']);
 }
-
-// Create new job
-$jobId = generateId();
-$newJob = [
-    'id' => $jobId,
-    'created_at' => date('Y-m-d H:i:s'),
-    'rep_name' => $repName,
-    'start_time' => $startTime,
-    'location' => $location
-];
-
-$data['jobs'][] = $newJob;
-
-// Save data
-saveData($data);
-
-sendJsonResponse(['success' => true, 'message' => 'Job created successfully', 'job_id' => $jobId]);
 ?>

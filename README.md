@@ -24,7 +24,7 @@ Consists of 2 parts:
       5) and a submit button that POSTs those 3 fields and the token and job id to the backend
 2) A php based backend that responds to the POST requests described above by
    1) Matching the token to a hard coded token, if they don't match error
-   2) saving or reading from a JSON data file. The data structure has a single array of jobs with these properties:
+   2) saving or reading from a SQLite database. The data structure has a single table of jobs with these properties:
       1) required job id
       2) required create datetime (created on insert by the backend)
       3) required rep name

@@ -34,28 +34,8 @@ if (!verifyToken($token)) {
     sendJsonResponse(['success' => false, 'message' => 'Invalid token']);
 }
 
-// Load data
-$data = initDataStorage();
-
-// Filter in-progress jobs for this rep (where closed_at is null)
-$jobs = [];
-if (isset($data['jobs'])) {
-    foreach ($data['jobs'] as $job) {
-        if ($job['rep_name'] === $repName && !isset($job['closed_at'])) {
-            // Only return the fields needed for the list
-            $jobs[] = [
-                'id' => $job['id'],
-                'start_time' => $job['start_time'],
-                'location' => $job['location']
-            ];
-        }
-    }
-}
-
-// Sort by start_time descending
-usort($jobs, function($a, $b) {
-    return strtotime($b['start_time']) - strtotime($a['start_time']);
-});
+// Get in-progress jobs from database
+$jobs = getInProgressJobs($repName);
 
 sendJsonResponse(['success' => true, 'jobs' => $jobs]);
 ?>

@@ -36,27 +36,10 @@ if (!verifyToken($token)) {
     sendJsonResponse(['success' => false, 'message' => 'Invalid token']);
 }
 
-// Load data
-$data = initDataStorage();
+// Complete job in database
+$success = completeJob($jobId, $endTime, $notes);
 
-// Find and update the job
-$jobFound = false;
-if (isset($data['jobs'])) {
-    for ($i = 0; $i < count($data['jobs']); $i++) {
-        if ($data['jobs'][$i]['id'] === $jobId) {
-            $data['jobs'][$i]['end_time'] = $endTime;
-            $data['jobs'][$i]['notes'] = $notes;
-            $data['jobs'][$i]['closed_at'] = date('Y-m-d H:i:s');
-            $jobFound = true;
-            break;
-        }
-    }
-}
-
-// Save data
-saveData($data);
-
-if ($jobFound) {
+if ($success) {
     sendJsonResponse(['success' => true, 'message' => 'Job completed successfully']);
 } else {
     sendJsonResponse(['success' => false, 'message' => 'Job not found']);
