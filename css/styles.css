@@ -115,7 +115,7 @@ button:hover, .primary-btn:hover, .secondary-btn:hover, .cancel-btn:hover {
     background-color: #757575;
 }
 
-.pwa-instructions {
+.pwa-instructions-link {
     margin-top: 24px;
     padding: 16px;
     background-color: #e8f5e9;
@@ -123,11 +123,18 @@ button:hover, .primary-btn:hover, .secondary-btn:hover, .cancel-btn:hover {
     border-left: 4px solid #4CAF50;
 }
 
-.pwa-instructions ul {
-    padding-left: 20px;
+.pwa-instructions-link a {
+    color: #4CAF50;
+    text-decoration: underline;
+    font-weight: bold;
 }
 
-.pwa-instructions li {
+.pwa-instructions-link ul {
+    padding-left: 20px;
+    margin-top: 8px;
+}
+
+.pwa-instructions-link li {
     margin-bottom: 8px;
 }
 

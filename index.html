@@ -27,13 +27,15 @@
                     </div>
                     <button type="submit">Save Settings</button>
                 </form>
-                <div class="pwa-instructions">
+                <div class="pwa-instructions-link">
                     <h3>Install as App</h3>
-                    <p>To install HandyManager as an app on your device:</p>
-                    <ul>
-                        <li><strong>Android Chrome:</strong> Tap the menu (three dots) and select "Add to Home screen"</li>
-                        <li><strong>iOS Safari:</strong> Tap the share button and select "Add to Home Screen"</li>
-                    </ul>
+                    <p><a href="#" id="show-pwa-instructions">Click here</a> to see instructions for installing HandyManager as an app on your device.</p>
+                    <div id="pwa-instructions" style="display: none;">
+                        <ul>
+                            <li><strong>Android Chrome:</strong> Tap the menu (three dots) and select "Add to Home screen"</li>
+                            <li><strong>iOS Safari:</strong> Tap the share button and select "Add to Home Screen"</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
             
@@ -49,5 +51,23 @@
     </div>
     
     <script src="js/main.js"></script>
+    <script>
+        // Handle PWA instructions toggle
+        document.addEventListener('DOMContentLoaded', function() {
+            const showInstructionsLink = document.getElementById('show-pwa-instructions');
+            const instructionsDiv = document.getElementById('pwa-instructions');
+            
+            showInstructionsLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (instructionsDiv.style.display === 'none') {
+                    instructionsDiv.style.display = 'block';
+                    showInstructionsLink.textContent = 'Hide instructions';
+                } else {
+                    instructionsDiv.style.display = 'none';
+                    showInstructionsLink.textContent = 'Click here';
+                }
+            });
+        });
+    </script>
 </body>
 </html>
