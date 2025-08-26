@@ -1,0 +1,13 @@
+# Database files
+*.db
+*.db-*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

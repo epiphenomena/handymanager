@@ -1,0 +1,132 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f5f5f5;
+    color: #333;
+}
+
+.container {
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #ddd;
+}
+
+h1 {
+    color: #4CAF50;
+    margin: 0;
+}
+
+h2 {
+    color: #333;
+    margin-top: 0;
+    display: inline-block;
+}
+
+.header-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+input, textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font-size: 16px;
+}
+
+input[type="datetime-local"] {
+    height: 44px;
+}
+
+button, .primary-btn, .secondary-btn {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 16px 24px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    margin: 8px 0;
+    cursor: pointer;
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+button:hover, .primary-btn:hover, .secondary-btn:hover {
+    background-color: #45a049;
+}
+
+.secondary-btn {
+    background-color: #2196F3;
+    width: auto;
+    padding: 8px 16px;
+}
+
+.secondary-btn:hover {
+    background-color: #1976D2;
+}
+
+#jobs-list {
+    list-style-type: none;
+    padding: 0;
+}
+
+#jobs-list li {
+    background-color: white;
+    margin-bottom: 12px;
+    padding: 16px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.job-link {
+    text-decoration: none;
+    color: #333;
+    display: block;
+}
+
+.job-link:hover {
+    color: #4CAF50;
+}
+
+.back-link {
+    display: block;
+    text-align: center;
+    margin-top: 24px;
+    color: #4CAF50;
+    text-decoration: none;
+}
+
+@media (min-width: 600px) {
+    .container {
+        max-width: 600px;
+    }
+    
+    .secondary-btn {
+        width: auto;
+    }
+}
