@@ -2,7 +2,6 @@
 
 const CACHE_NAME = 'handymanager-v1';
 const urlsToCache = [
-    '/',
     '/index.html',
     '/new-job.html',
     '/job-details.html',
