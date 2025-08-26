@@ -2,7 +2,7 @@
 // config.php - Configuration and utility functions
 
 // Hardcoded token for authentication
-define('VALID_TOKEN', 'handymanager-secret-token');
+define('VALID_TOKEN', 'handyman');
 
 // Include database functions
 require_once 'database.php';
