@@ -52,7 +52,6 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                alert('Job completed successfully!');
                 window.location.href = 'index.html';
             } else {
                 alert('Error completing job: ' + data.message);
