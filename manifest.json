@@ -1,7 +1,7 @@
 {
     "name": "HandyManager",
     "short_name": "HandyManager",
-    "start_url": "./index.html",
+    "start_url": "./",
     "display": "standalone",
     "background_color": "#f5f5f5",
     "theme_color": "#4CAF50",

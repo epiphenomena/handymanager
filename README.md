@@ -48,5 +48,5 @@ The frontend PWA is very simple, clear and clean. The frontend is intended to be
    ```bash
    php dev-server.php 8080
    ```
-4. Open your browser to http://localhost:8000/index.html (or your chosen port)
+4. Open your browser to http://localhost:8000/ (or your chosen port)
 5. For the token, use the hardcoded value in `config.php` (default: "handymanager-secret-token")

@@ -2,13 +2,15 @@
 
 const CACHE_NAME = 'handymanager-v1';
 const urlsToCache = [
-    '/index.html',
+    '/',
     '/new-job.html',
     '/job-details.html',
     '/css/styles.css',
     '/js/main.js',
     '/js/new-job.js',
-    '/js/job-details.js'
+    '/js/job-details.js',
+    '/favicon.ico',
+    '/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', event => {

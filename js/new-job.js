@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (!token || !repName) {
             alert('Please set your token and rep name in settings first.');
-            window.location.href = 'index.html';
+            window.location.href = './';
             return;
         }
         
@@ -48,7 +48,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                window.location.href = 'index.html';
+                window.location.href = './';
             } else {
                 alert('Error creating job: ' + data.message);
             }

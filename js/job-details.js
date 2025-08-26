@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (!token) {
             alert('Please set your token in settings first.');
-            window.location.href = 'index.html';
+            window.location.href = './';
             return;
         }
         
@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                window.location.href = 'index.html';
+                window.location.href = './';
             } else {
                 alert('Error completing job: ' + data.message);
             }
