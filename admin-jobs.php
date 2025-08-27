@@ -82,10 +82,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border-radius: 0.375rem;
             padding: 15px;
             margin-bottom: 20px;
-            display: none;
         }
         .main-content {
             display: none;
+        }
+        .settings-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
         }
     </style>
 </head>
@@ -117,6 +121,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 <!-- Main Content (initially hidden) -->
                 <div class="main-content" id="mainContent">
+                    <button type="button" class="btn btn-secondary settings-btn" id="showSettings">
+                        <i class="bi bi-gear"></i> Settings
+                    </button>
+                    
                     <div class="filter-section mb-4">
                         <h4>Filters</h4>
                         <form id="filterForm">
@@ -181,6 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         const toggleTokenVisibilityBtn = document.getElementById('toggleTokenVisibility');
         const saveTokenCheckbox = document.getElementById('saveToken');
         const saveSettingsBtn = document.getElementById('saveSettings');
+        const showSettingsBtn = document.getElementById('showSettings');
         const filterForm = document.getElementById('filterForm');
         const dateFromInput = document.getElementById('dateFrom');
         const dateToInput = document.getElementById('dateTo');
@@ -202,6 +211,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         });
         
+        // Show settings section
+        function showSettingsSection() {
+            settingsSection.style.display = 'block';
+            mainContent.style.display = 'none';
+        }
+        
+        // Show main content
+        function showMainContent() {
+            settingsSection.style.display = 'none';
+            mainContent.style.display = 'block';
+        }
+        
+        // Show settings button event
+        showSettingsBtn.addEventListener('click', function() {
+            showSettingsSection();
+        });
+        
         // Load saved token if available
         document.addEventListener('DOMContentLoaded', function() {
             const savedToken = localStorage.getItem('handymanager_admin_token');
@@ -210,8 +236,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 saveTokenCheckbox.checked = true;
                 showMainContent();
                 loadFilterOptions();
+                loadJobs();
             } else {
-                settingsSection.style.display = 'block';
+                showSettingsSection();
             }
         });
         
@@ -263,12 +290,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
-        // Show main content and hide settings
-        function showMainContent() {
-            settingsSection.style.display = 'none';
-            mainContent.style.display = 'block';
-        }
-        
         // Load filter options (reps and locations)
         async function loadFilterOptions() {
             try {
@@ -302,7 +323,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const token = localStorage.getItem('handymanager_admin_token');
             if (!token) {
                 alert('Admin token not found. Please re-authenticate.');
-                location.reload();
+                showSettingsSection();
                 return;
             }
             
@@ -327,8 +348,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (data.message.includes('Invalid admin token')) {
                         // Token is no longer valid, show settings again
                         localStorage.removeItem('handymanager_admin_token');
-                        settingsSection.style.display = 'block';
-                        mainContent.style.display = 'none';
+                        showSettingsSection();
                     }
                 }
             } catch (error) {
@@ -422,7 +442,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const token = localStorage.getItem('handymanager_admin_token');
             if (!token) {
                 alert('Admin token not found. Please re-authenticate.');
-                location.reload();
+                showSettingsSection();
                 return;
             }
             
@@ -459,8 +479,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (data.message.includes('Invalid admin token')) {
                         // Token is no longer valid, show settings again
                         localStorage.removeItem('handymanager_admin_token');
-                        settingsSection.style.display = 'block';
-                        mainContent.style.display = 'none';
+                        showSettingsSection();
                     }
                 }
             } catch (error) {
@@ -472,8 +491,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Convert jobs data to CSV format
         function convertToCsv(jobs) {
             // CSV header
-            let csv = 'Start Date/Time,End Date/Time,Rep Name,Location,Notes
-';
+            let csv = 'Start Date/Time,End Date/Time,Rep Name,Location,Notes\n';
             
             // CSV rows
             jobs.forEach(job => {
@@ -484,8 +502,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const location = job.location ? `"${job.location.replace(/"/g, '""')}"` : '""';
                 const notes = job.notes ? `"${job.notes.replace(/"/g, '""')}"` : '""';
                 
-                csv += `${startDate},${endDate},${repName},${location},${notes}
-`;
+                csv += `${startDate},${endDate},${repName},${location},${notes}\n`;
             });
             
             return csv;
