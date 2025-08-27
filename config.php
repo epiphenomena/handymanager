@@ -3,6 +3,7 @@
 
 // Hardcoded token for authentication
 define('VALID_TOKEN', 'handyman');
+define('ADMIN_TOKEN', 'admin123'); // Separate token for admin access
 
 // Include database functions
 require_once 'database.php';
@@ -13,6 +14,11 @@ initDatabase();
 // Function to verify token
 function verifyToken($token) {
     return $token === VALID_TOKEN;
+}
+
+// Function to verify admin token
+function verifyAdminToken($token) {
+    return $token === ADMIN_TOKEN;
 }
 
 // Function to send JSON response

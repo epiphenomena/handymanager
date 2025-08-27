@@ -87,6 +87,72 @@ function completeJob($jobId, $endTime, $notes) {
     ]);
 }
 
+// Function to get all jobs with filtering and sorting
+function getAllJobs($filters = []) {
+    $pdo = getDbConnection();
+    
+    $whereClause = "";
+    $params = [];
+    
+    // Apply filters if provided
+    if (!empty($filters)) {
+        $whereConditions = [];
+        
+        if (!empty($filters['date_from'])) {
+            $whereConditions[] = "DATE(start_time) >= :date_from";
+            $params['date_from'] = $filters['date_from'];
+        }
+        
+        if (!empty($filters['date_to'])) {
+            $whereConditions[] = "DATE(start_time) <= :date_to";
+            $params['date_to'] = $filters['date_to'];
+        }
+        
+        if (!empty($filters['rep'])) {
+            $whereConditions[] = "rep_name = :rep";
+            $params['rep'] = $filters['rep'];
+        }
+        
+        if (!empty($filters['location'])) {
+            $whereConditions[] = "location = :location";
+            $params['location'] = $filters['location'];
+        }
+        
+        if (!empty($whereConditions)) {
+            $whereClause = "WHERE " . implode(" AND ", $whereConditions);
+        }
+    }
+    
+    // Sort by closed_at DESC (nulls first for in-progress jobs) then by start_time DESC
+    $sql = "
+        SELECT start_time, end_time, rep_name, location, notes
+        FROM jobs
+        $whereClause
+        ORDER BY 
+            CASE WHEN closed_at IS NULL THEN 0 ELSE 1 END,
+            COALESCE(closed_at, start_time) DESC
+    ";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+// Function to get unique reps and locations for filter dropdowns
+function getFilterOptions() {
+    $pdo = getDbConnection();
+    
+    // Get unique reps
+    $stmt = $pdo->query("SELECT DISTINCT rep_name FROM jobs WHERE rep_name IS NOT NULL ORDER BY rep_name");
+    $reps = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    // Get unique locations
+    $stmt = $pdo->query("SELECT DISTINCT location FROM jobs WHERE location IS NOT NULL ORDER BY location");
+    $locations = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    return ['reps' => $reps, 'locations' => $locations];
+}
+
 // Function to migrate existing JSON data to SQLite (if needed)
 function migrateFromJson() {
     $jsonFile = __DIR__ . '/handymanager-data.json';
