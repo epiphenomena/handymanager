@@ -29,19 +29,28 @@ document.addEventListener('DOMContentLoaded', function() {
     const savedToken = localStorage.getItem('handymanager_token');
     const savedTechName = localStorage.getItem('handymanager_tech_name');
     
+    // Show settings section if either token or tech name is missing
     if (savedToken && savedTechName) {
         document.getElementById('token').value = savedToken;
         document.getElementById('tech-name').value = savedTechName;
         showJobsSection();
         loadJobs(savedToken, savedTechName);
+    } else {
+        // Show settings section if either token or tech name is missing
+        showSettingsSection();
     }
-    // If no saved settings, jobs section is already visible by default in HTML
     
     // Handle settings form submission
     settingsForm.addEventListener('submit', function(e) {
         e.preventDefault();
-        const token = document.getElementById('token').value;
-        const techName = document.getElementById('tech-name').value;
+        const token = document.getElementById('token').value.trim();
+        const techName = document.getElementById('tech-name').value.trim();
+        
+        // Validate that both fields are filled
+        if (!token || !techName) {
+            alert('Please fill in both token and tech name');
+            return;
+        }
         
         localStorage.setItem('handymanager_token', token);
         localStorage.setItem('handymanager_tech_name', techName);
@@ -64,6 +73,13 @@ document.addEventListener('DOMContentLoaded', function() {
     historyBtn.addEventListener('click', function() {
         const token = localStorage.getItem('handymanager_token');
         const techName = localStorage.getItem('handymanager_tech_name');
+        
+        // Validate that both fields are present
+        if (!token || !techName) {
+            showSettingsSection();
+            return;
+        }
+        
         showHistorySection();
         loadHistory(token, techName);
     });
