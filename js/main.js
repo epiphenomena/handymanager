@@ -34,10 +34,8 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('rep-name').value = savedRepName;
         showJobsSection();
         loadJobs(savedToken, savedRepName);
-    } else {
-        // Show jobs section by default even if no saved settings
-        showJobsSection();
     }
+    // If no saved settings, jobs section is already visible by default in HTML
     
     // Handle settings form submission
     settingsForm.addEventListener('submit', function(e) {

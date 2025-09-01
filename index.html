@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HandyManager</title>
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/styles.css?v=1.1">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4CAF50">
 </head>
@@ -14,7 +14,7 @@
             <h1>HandyManager</h1>
         </header>
         <main>
-            <div id="settings-section">
+            <div id="settings-section" style="display: none;">
                 <h2>Settings</h2>
                 <form id="settings-form">
                     <div class="form-group">
@@ -38,7 +38,7 @@
                 </div>
             </div>
 
-            <div id="jobs-section" style="display: none;">
+            <div id="jobs-section">
                 <div class="header-controls">
                     <h2>In Progress Jobs</h2>
                     <div class="button-group">
@@ -60,7 +60,7 @@
         </main>
     </div>
 
-    <script src="js/main.js"></script>
+    <script src="js/main.js?v=1.1"></script>
     <script>
         // No PWA installation functionality needed
         document.addEventListener('DOMContentLoaded', function() {
