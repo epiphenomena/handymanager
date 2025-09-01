@@ -34,6 +34,9 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('rep-name').value = savedRepName;
         showJobsSection();
         loadJobs(savedToken, savedRepName);
+    } else {
+        // Show jobs section by default even if no saved settings
+        showJobsSection();
     }
     
     // Handle settings form submission
