@@ -22,12 +22,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $input = json_decode(file_get_contents('php://input'), true);
 
 // Validate input
-if (!isset($input['token']) || !isset($input['rep_name']) || !isset($input['start_time']) || !isset($input['location'])) {
+if (!isset($input['token']) || !isset($input['tech_name']) || !isset($input['start_time']) || !isset($input['location'])) {
     sendJsonResponse(['success' => false, 'message' => 'Missing required fields']);
 }
 
 $token = $input['token'];
-$repName = $input['rep_name'];
+$techName = $input['tech_name'];
 $startTime = $input['start_time'];
 $location = $input['location'];
 
@@ -37,7 +37,7 @@ if (!verifyToken($token)) {
 }
 
 // Create new job in database
-$success = createJob($repName, $startTime, $location);
+$success = createJob($techName, $startTime, $location);
 
 if ($success) {
     // Get the ID of the newly created job

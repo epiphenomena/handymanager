@@ -1,5 +1,5 @@
 <?php
-// get-jobs.php - Get in-progress jobs for a rep
+// get-jobs.php - Get in-progress jobs for a tech
 
 require_once 'config.php';
 
@@ -22,12 +22,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $input = json_decode(file_get_contents('php://input'), true);
 
 // Validate input
-if (!isset($input['token']) || !isset($input['rep_name'])) {
-    sendJsonResponse(['success' => false, 'message' => 'Missing token or rep name']);
+if (!isset($input['token']) || !isset($input['tech_name'])) {
+    sendJsonResponse(['success' => false, 'message' => 'Missing token or tech name']);
 }
 
 $token = $input['token'];
-$repName = $input['rep_name'];
+$techName = $input['tech_name'];
 
 // Verify token
 if (!verifyToken($token)) {
@@ -35,7 +35,7 @@ if (!verifyToken($token)) {
 }
 
 // Get in-progress jobs from database
-$jobs = getInProgressJobs($repName);
+$jobs = getInProgressJobs($techName);
 
 sendJsonResponse(['success' => true, 'jobs' => $jobs]);
 ?>

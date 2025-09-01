@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         
         const token = localStorage.getItem('handymanager_token');
-        const repName = localStorage.getItem('handymanager_rep_name');
+        const techName = localStorage.getItem('handymanager_tech_name');
         const startDate = document.getElementById('start-date').value;
         const startTime = document.getElementById('start-time').value;
         const location = document.getElementById('location').value;
@@ -27,8 +27,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Combine date and time
         const startDateTime = `${startDate} ${startTime}`;
         
-        if (!token || !repName) {
-            alert('Please set your token and rep name in settings first.');
+        if (!token || !techName) {
+            alert('Please set your token and tech name in settings first.');
             window.location.href = './';
             return;
         }
@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify({
                 token: token,
-                rep_name: repName,
+                tech_name: techName,
                 start_time: startDateTime,
                 location: location
             })

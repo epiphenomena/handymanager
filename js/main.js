@@ -27,13 +27,13 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load saved settings
     const savedToken = localStorage.getItem('handymanager_token');
-    const savedRepName = localStorage.getItem('handymanager_rep_name');
+    const savedTechName = localStorage.getItem('handymanager_tech_name');
     
-    if (savedToken && savedRepName) {
+    if (savedToken && savedTechName) {
         document.getElementById('token').value = savedToken;
-        document.getElementById('rep-name').value = savedRepName;
+        document.getElementById('tech-name').value = savedTechName;
         showJobsSection();
-        loadJobs(savedToken, savedRepName);
+        loadJobs(savedToken, savedTechName);
     }
     // If no saved settings, jobs section is already visible by default in HTML
     
@@ -41,13 +41,13 @@ document.addEventListener('DOMContentLoaded', function() {
     settingsForm.addEventListener('submit', function(e) {
         e.preventDefault();
         const token = document.getElementById('token').value;
-        const repName = document.getElementById('rep-name').value;
+        const techName = document.getElementById('tech-name').value;
         
         localStorage.setItem('handymanager_token', token);
-        localStorage.setItem('handymanager_rep_name', repName);
+        localStorage.setItem('handymanager_tech_name', techName);
         
         showJobsSection();
-        loadJobs(token, repName);
+        loadJobs(token, techName);
     });
     
     // Handle new job button click
@@ -63,9 +63,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Handle history button click
     historyBtn.addEventListener('click', function() {
         const token = localStorage.getItem('handymanager_token');
-        const repName = localStorage.getItem('handymanager_rep_name');
+        const techName = localStorage.getItem('handymanager_tech_name');
         showHistorySection();
-        loadHistory(token, repName);
+        loadHistory(token, techName);
     });
     
     // Handle back to jobs button click
@@ -95,7 +95,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Load jobs from backend
-    function loadJobs(token, repName) {
+    function loadJobs(token, techName) {
         fetch('get-jobs.php', {
             method: 'POST',
             headers: {
@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify({
                 token: token,
-                rep_name: repName
+                tech_name: techName
             })
         })
         .then(response => response.json())
@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Load history from backend
-    function loadHistory(token, repName) {
+    function loadHistory(token, techName) {
         fetch('get-latest-jobs.php', {
             method: 'POST',
             headers: {
@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify({
                 token: token,
-                rep_name: repName
+                tech_name: techName
             })
         })
         .then(response => response.json())

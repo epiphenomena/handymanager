@@ -25,7 +25,7 @@ function initDatabase() {
         CREATE TABLE IF NOT EXISTS jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT NOT NULL,
-            rep_name TEXT NOT NULL,
+            tech_name TEXT NOT NULL,
             start_time TEXT NOT NULL,
             location TEXT NOT NULL,
             end_time TEXT,
@@ -37,34 +37,34 @@ function initDatabase() {
     $pdo->exec($sql);
 }
 
-// Function to get all in-progress jobs for a rep (where closed_at is null)
-function getInProgressJobs($repName) {
+// Function to get all in-progress jobs for a tech (where closed_at is null)
+function getInProgressJobs($techName) {
     $pdo = getDbConnection();
     
     $stmt = $pdo->prepare("
         SELECT id, start_time, location 
         FROM jobs 
-        WHERE rep_name = :rep_name AND closed_at IS NULL
+        WHERE tech_name = :tech_name AND closed_at IS NULL
         ORDER BY start_time DESC
     ");
     
-    $stmt->execute(['rep_name' => $repName]);
+    $stmt->execute(['tech_name' => $techName]);
     return $stmt->fetchAll();
 }
 
-// Function to get the latest 10 jobs for a rep (including in-progress jobs)
-function getLatestJobs($repName, $limit = 10) {
+// Function to get the latest 10 jobs for a tech (including in-progress jobs)
+function getLatestJobs($techName, $limit = 10) {
     $pdo = getDbConnection();
     
     $stmt = $pdo->prepare("
         SELECT id, start_time, end_time, location, notes
         FROM jobs 
-        WHERE rep_name = :rep_name
+        WHERE tech_name = :tech_name
         ORDER BY COALESCE(closed_at, start_time) DESC
         LIMIT :limit
     ");
     
-    $stmt->bindValue(':rep_name', $repName, PDO::PARAM_STR);
+    $stmt->bindValue(':tech_name', $techName, PDO::PARAM_STR);
     $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
     $stmt->execute();
     
@@ -105,17 +105,17 @@ function updateJob($jobId, $startTime, $endTime, $location, $notes) {
 }
 
 // Function to create a new job
-function createJob($repName, $startTime, $location) {
+function createJob($techName, $startTime, $location) {
     $pdo = getDbConnection();
     
     $stmt = $pdo->prepare("
-        INSERT INTO jobs (created_at, rep_name, start_time, location)
-        VALUES (:created_at, :rep_name, :start_time, :location)
+        INSERT INTO jobs (created_at, tech_name, start_time, location)
+        VALUES (:created_at, :tech_name, :start_time, :location)
     ");
     
     return $stmt->execute([
         'created_at' => date('Y-m-d H:i:s'),
-        'rep_name' => $repName,
+        'tech_name' => $techName,
         'start_time' => $startTime,
         'location' => $location
     ]);
@@ -160,9 +160,9 @@ function getAllJobs($filters = []) {
             $params['date_to'] = $filters['date_to'];
         }
         
-        if (!empty($filters['rep'])) {
-            $whereConditions[] = "rep_name = :rep";
-            $params['rep'] = $filters['rep'];
+        if (!empty($filters['tech'])) {
+            $whereConditions[] = "tech_name = :tech";
+            $params['tech'] = $filters['tech'];
         }
         
         if (!empty($filters['location'])) {
@@ -177,7 +177,7 @@ function getAllJobs($filters = []) {
     
     // Sort by closed_at DESC (nulls first for in-progress jobs) then by start_time DESC
     $sql = "
-        SELECT start_time, end_time, rep_name, location, notes
+        SELECT start_time, end_time, tech_name, location, notes
         FROM jobs
         $whereClause
         ORDER BY 
@@ -190,19 +190,19 @@ function getAllJobs($filters = []) {
     return $stmt->fetchAll();
 }
 
-// Function to get unique reps and locations for filter dropdowns
+// Function to get unique techs and locations for filter dropdowns
 function getFilterOptions() {
     $pdo = getDbConnection();
     
-    // Get unique reps
-    $stmt = $pdo->query("SELECT DISTINCT rep_name FROM jobs WHERE rep_name IS NOT NULL ORDER BY rep_name");
-    $reps = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    // Get unique techs
+    $stmt = $pdo->query("SELECT DISTINCT tech_name FROM jobs WHERE tech_name IS NOT NULL ORDER BY tech_name");
+    $techs = $stmt->fetchAll(PDO::FETCH_COLUMN);
     
     // Get unique locations
     $stmt = $pdo->query("SELECT DISTINCT location FROM jobs WHERE location IS NOT NULL ORDER BY location");
     $locations = $stmt->fetchAll(PDO::FETCH_COLUMN);
     
-    return ['reps' => $reps, 'locations' => $locations];
+    return ['techs' => $techs, 'locations' => $locations];
 }
 
 // Function to migrate existing JSON data to SQLite (if needed)
@@ -227,14 +227,14 @@ function migrateFromJson() {
     try {
         $stmt = $pdo->prepare("
             INSERT OR IGNORE INTO jobs 
-            (id, created_at, rep_name, start_time, location, end_time, notes, closed_at)
-            VALUES (:id, :created_at, :rep_name, :start_time, :location, :end_time, :notes, :closed_at)
+            (id, created_at, tech_name, start_time, location, end_time, notes, closed_at)
+            VALUES (:id, :created_at, :tech_name, :start_time, :location, :end_time, :notes, :closed_at)
         ");
         
         foreach ($jsonData['jobs'] as $job) {
             $stmt->execute([
                 'created_at' => $job['created_at'] ?? null,
-                'rep_name' => $job['rep_name'] ?? null,
+                'tech_name' => $job['tech_name'] ?? null,
                 'start_time' => $job['start_time'] ?? null,
                 'location' => $job['location'] ?? null,
                 'end_time' => $job['end_time'] ?? null,

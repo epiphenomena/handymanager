@@ -138,9 +138,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <input type="date" class="form-control" id="dateTo">
                                 </div>
                                 <div class="col-md-3 mb-3">
-                                    <label for="repFilter" class="form-label">Rep</label>
-                                    <select class="form-select" id="repFilter">
-                                        <option value="">All Reps</option>
+                                    <label for="techFilter" class="form-label">Tech</label>
+                                    <select class="form-select" id="techFilter">
+                                        <option value="">All Techs</option>
                                     </select>
                                 </div>
                                 <div class="col-md-3 mb-3">
@@ -166,7 +166,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <tr>
                                     <th>Start Date/Time</th>
                                     <th>End Date/Time</th>
-                                    <th>Rep Name</th>
+                                    <th>Tech Name</th>
                                     <th>Location</th>
                                     <th>Notes</th>
                                 </tr>
@@ -193,7 +193,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         const filterForm = document.getElementById('filterForm');
         const dateFromInput = document.getElementById('dateFrom');
         const dateToInput = document.getElementById('dateTo');
-        const repFilter = document.getElementById('repFilter');
+        const techFilter = document.getElementById('techFilter');
         const locationFilter = document.getElementById('locationFilter');
         const applyFiltersBtn = document.getElementById('applyFilters');
         const clearFiltersBtn = document.getElementById('clearFilters');
@@ -290,20 +290,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
-        // Load filter options (reps and locations)
+        // Load filter options (techs and locations)
         async function loadFilterOptions() {
             try {
                 const response = await fetch('get-filter-options.php');
                 const data = await response.json();
                 
                 if (data.success) {
-                    // Populate reps dropdown
-                    data.options.reps.forEach(rep => {
-                        const option = document.createElement('option');
-                        option.value = rep;
-                        option.textContent = rep;
-                        repFilter.appendChild(option);
-                    });
+                    // Populate techs dropdown
+        data.options.techs.forEach(tech => {
+            const option = document.createElement('option');
+            option.value = tech;
+            option.textContent = tech;
+            techFilter.appendChild(option);
+        });
                     
                     // Populate locations dropdown
                     data.options.locations.forEach(location => {
@@ -378,7 +378,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 row.innerHTML = `
                     <td>${startDate}</td>
                     <td>${endDate}</td>
-                    <td>${job.rep_name || ''}</td>
+                                                    <td>${job.tech_name || ''}</td>
                     <td>${job.location || ''}</td>
                     <td>${job.notes || ''}</td>
                 `;
@@ -399,8 +399,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 filters.date_to = dateToInput.value;
             }
             
-            if (repFilter.value) {
-                filters.rep = repFilter.value;
+            if (techFilter.value) {
+                filters.tech = techFilter.value;
             }
             
             if (locationFilter.value) {
@@ -414,7 +414,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         clearFiltersBtn.addEventListener('click', function() {
             dateFromInput.value = '';
             dateToInput.value = '';
-            repFilter.value = '';
+            techFilter.value = '';
             locationFilter.value = '';
             loadJobs();
         });
@@ -431,8 +431,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 filters.date_to = dateToInput.value;
             }
             
-            if (repFilter.value) {
-                filters.rep = repFilter.value;
+            if (techFilter.value) {
+                filters.tech = techFilter.value;
             }
             
             if (locationFilter.value) {
@@ -491,18 +491,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Convert jobs data to CSV format
         function convertToCsv(jobs) {
             // CSV header
-            let csv = 'Start Date/Time,End Date/Time,Rep Name,Location,Notes\n';
+            let csv = 'Start Date/Time,End Date/Time,Tech Name,Location,Notes\n';
             
             // CSV rows
             jobs.forEach(job => {
                 // Escape any commas or quotes in the data
                 const startDate = job.start_time ? `"${new Date(job.start_time).toLocaleString()}"` : '""';
                 const endDate = job.end_time ? `"${new Date(job.end_time).toLocaleString()}"` : '""';
-                const repName = job.rep_name ? `"${job.rep_name.replace(/"/g, '""')}"` : '""';
+                const techName = job.tech_name ? `"${job.tech_name.replace(/"/g, '""')}"` : '""';
                 const location = job.location ? `"${job.location.replace(/"/g, '""')}"` : '""';
                 const notes = job.notes ? `"${job.notes.replace(/"/g, '""')}"` : '""';
                 
-                csv += `${startDate},${endDate},${repName},${location},${notes}\n`;
+                csv += `${startDate},${endDate},${techName},${location},${notes}\n`;
             });
             
             return csv;

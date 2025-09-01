@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                alert('Job updated successfully');
+                // Redirect to home page without alert
                 window.location.href = './';
             } else {
                 alert('Error updating job: ' + data.message);
