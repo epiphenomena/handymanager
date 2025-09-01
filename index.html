@@ -41,10 +41,21 @@
             <div id="jobs-section" style="display: none;">
                 <div class="header-controls">
                     <h2>In Progress Jobs</h2>
-                    <button id="settings-btn" class="secondary-btn">Settings</button>
+                    <div class="button-group">
+                        <button id="settings-btn" class="secondary-btn">Settings</button>
+                        <button id="history-btn" class="secondary-btn">History</button>
+                    </div>
                 </div>
                 <ul id="jobs-list"></ul>
                 <button id="new-job-btn" class="primary-btn">Start New Job</button>
+            </div>
+
+            <div id="history-section" style="display: none;">
+                <div class="header-controls">
+                    <h2>Job History</h2>
+                    <button id="back-to-jobs-btn" class="secondary-btn">Back</button>
+                </div>
+                <ul id="history-list"></ul>
             </div>
         </main>
     </div>

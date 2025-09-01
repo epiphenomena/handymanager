@@ -17,9 +17,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const settingsForm = document.getElementById('settings-form');
     const settingsSection = document.getElementById('settings-section');
     const jobsSection = document.getElementById('jobs-section');
+    const historySection = document.getElementById('history-section');
     const jobsList = document.getElementById('jobs-list');
+    const historyList = document.getElementById('history-list');
     const newJobBtn = document.getElementById('new-job-btn');
     const settingsBtn = document.getElementById('settings-btn');
+    const historyBtn = document.getElementById('history-btn');
+    const backToJobsBtn = document.getElementById('back-to-jobs-btn');
     
     // Load saved settings
     const savedToken = localStorage.getItem('handymanager_token');
@@ -55,16 +59,38 @@ document.addEventListener('DOMContentLoaded', function() {
         showSettingsSection();
     });
     
-    // Show jobs section and hide settings
+    // Handle history button click
+    historyBtn.addEventListener('click', function() {
+        const token = localStorage.getItem('handymanager_token');
+        const repName = localStorage.getItem('handymanager_rep_name');
+        showHistorySection();
+        loadHistory(token, repName);
+    });
+    
+    // Handle back to jobs button click
+    backToJobsBtn.addEventListener('click', function() {
+        showJobsSection();
+    });
+    
+    // Show jobs section and hide others
     function showJobsSection() {
         settingsSection.style.display = 'none';
+        historySection.style.display = 'none';
         jobsSection.style.display = 'block';
     }
     
-    // Show settings section and hide jobs
+    // Show settings section and hide others
     function showSettingsSection() {
         jobsSection.style.display = 'none';
+        historySection.style.display = 'none';
         settingsSection.style.display = 'block';
+    }
+    
+    // Show history section and hide others
+    function showHistorySection() {
+        jobsSection.style.display = 'none';
+        settingsSection.style.display = 'none';
+        historySection.style.display = 'block';
     }
     
     // Load jobs from backend
@@ -93,6 +119,32 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    // Load history from backend
+    function loadHistory(token, repName) {
+        fetch('get-latest-jobs.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                token: token,
+                rep_name: repName
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayHistory(data.jobs);
+            } else {
+                alert('Error loading history: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error loading history. Please try again.');
+        });
+    }
+    
     // Display jobs in the list
     function displayJobs(jobs) {
         jobsList.innerHTML = '';
@@ -113,5 +165,54 @@ document.addEventListener('DOMContentLoaded', function() {
             listItem.appendChild(link);
             jobsList.appendChild(listItem);
         });
+    }
+    
+    // Display history in the list
+    function displayHistory(jobs) {
+        historyList.innerHTML = '';
+        
+        if (jobs.length === 0) {
+            const noJobsItem = document.createElement('li');
+            noJobsItem.textContent = 'No job history';
+            historyList.appendChild(noJobsItem);
+            return;
+        }
+        
+        jobs.forEach(job => {
+            const listItem = document.createElement('li');
+            listItem.className = 'history-item';
+            
+            const jobInfo = document.createElement('div');
+            jobInfo.className = 'job-info';
+            
+            const location = document.createElement('div');
+            location.className = 'job-location';
+            location.textContent = job.location;
+            
+            const timeInfo = document.createElement('div');
+            timeInfo.className = 'job-time';
+            const startTime = new Date(job.start_time).toLocaleString();
+            const endTime = job.end_time ? new Date(job.end_time).toLocaleString() : 'In Progress';
+            timeInfo.textContent = `Started: ${startTime} | Ended: ${endTime}`;
+            
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-btn';
+            editBtn.textContent = 'Edit';
+            editBtn.onclick = function() {
+                editJob(job);
+            };
+            
+            jobInfo.appendChild(location);
+            jobInfo.appendChild(timeInfo);
+            listItem.appendChild(jobInfo);
+            listItem.appendChild(editBtn);
+            historyList.appendChild(listItem);
+        });
+    }
+    
+    // Edit job function
+    function editJob(job) {
+        // Redirect to edit page with job ID
+        window.location.href = `edit-job.html?id=${job.id}`;
     }
 });

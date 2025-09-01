@@ -43,6 +43,11 @@ h3 {
     margin-bottom: 16px;
 }
 
+.button-group {
+    display: flex;
+    gap: 8px;
+}
+
 .form-group {
     margin-bottom: 16px;
 }
@@ -159,6 +164,55 @@ button:hover, .primary-btn:hover, .secondary-btn:hover, .cancel-btn:hover {
 
 .job-link:hover {
     color: #4CAF50;
+}
+
+#history-list {
+    list-style-type: none;
+    padding: 0;
+}
+
+#history-list li {
+    background-color: white;
+    margin-bottom: 12px;
+    padding: 16px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.job-info {
+    flex-grow: 1;
+}
+
+.job-location {
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.job-time {
+    font-size: 14px;
+    color: #666;
+}
+
+.edit-btn {
+    background-color: #2196F3;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin-left: 16px;
+    min-width: 60px;
+}
+
+.edit-btn:hover {
+    background-color: #1976D2;
 }
 
 @media (min-width: 600px) {

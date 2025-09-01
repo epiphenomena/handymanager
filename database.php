@@ -52,6 +52,58 @@ function getInProgressJobs($repName) {
     return $stmt->fetchAll();
 }
 
+// Function to get the latest 10 jobs for a rep (including in-progress jobs)
+function getLatestJobs($repName, $limit = 10) {
+    $pdo = getDbConnection();
+    
+    $stmt = $pdo->prepare("
+        SELECT id, start_time, end_time, location, notes
+        FROM jobs 
+        WHERE rep_name = :rep_name
+        ORDER BY COALESCE(closed_at, start_time) DESC
+        LIMIT :limit
+    ");
+    
+    $stmt->bindValue(':rep_name', $repName, PDO::PARAM_STR);
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    
+    return $stmt->fetchAll();
+}
+
+// Function to get a job by ID
+function getJobById($jobId) {
+    $pdo = getDbConnection();
+    
+    $stmt = $pdo->prepare("
+        SELECT id, start_time, end_time, location, notes
+        FROM jobs 
+        WHERE id = :job_id
+    ");
+    
+    $stmt->execute(['job_id' => $jobId]);
+    return $stmt->fetch();
+}
+
+// Function to update a job
+function updateJob($jobId, $startTime, $endTime, $location, $notes) {
+    $pdo = getDbConnection();
+    
+    $stmt = $pdo->prepare("
+        UPDATE jobs 
+        SET start_time = :start_time, end_time = :end_time, location = :location, notes = :notes
+        WHERE id = :job_id
+    ");
+    
+    return $stmt->execute([
+        'start_time' => $startTime,
+        'end_time' => $endTime,
+        'location' => $location,
+        'notes' => $notes,
+        'job_id' => $jobId
+    ]);
+}
+
 // Function to create a new job
 function createJob($repName, $startTime, $location) {
     $pdo = getDbConnection();
