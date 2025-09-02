@@ -26,12 +26,12 @@ self.addEventListener('fetch', event => {
 
     // Respond to the page with the result of the new, cache-busting fetch
         event.respondWith(fetch(newRequest));
-  } else {
-    event.respondWith(
-        caches.match(event.request)
-            .then(response => {
-                // Return cached version or fetch from network
-                return response || fetch(event.request);
-            })
-    );
+    } else {
+        event.respondWith(
+            caches.match(event.request)
+                .then(response => {
+                    // Return cached version or fetch from network
+                    return response || fetch(event.request);
+                }));
+    }
 });
