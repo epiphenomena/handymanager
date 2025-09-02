@@ -18,6 +18,15 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('fetch', event => {
+    const url = new URL(event.request.url);
+    if (!urlsToCache.includes(url.pathname)) {
+        // Add a unique version number (e.g., from a build script)
+        const newUrl = `${url.origin}${url.pathname}?v=${Date.now()}`;
+        const newRequest = new Request(newUrl, event.request);
+
+    // Respond to the page with the result of the new, cache-busting fetch
+        event.respondWith(fetch(newRequest));
+  } else {
     event.respondWith(
         caches.match(event.request)
             .then(response => {
