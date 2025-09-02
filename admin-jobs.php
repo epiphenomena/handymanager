@@ -161,6 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <tr>
                                     <th>Start Date/Time</th>
                                     <th>End Date/Time</th>
+                                    <th>Duration (Hours)</th>
                                     <th>Tech Name</th>
                                     <th>Location</th>
                                     <th>Notes</th>
@@ -367,7 +368,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if (jobs.length === 0) {
                 const row = document.createElement('tr');
-                row.innerHTML = '<td colspan="5" class="text-center">No jobs found</td>';
+                row.innerHTML = '<td colspan="6" class="text-center">No jobs found</td>';
                 jobsTableBody.appendChild(row);
                 return;
             }
@@ -379,10 +380,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const startDate = job.start_time ? new Date(job.start_time).toLocaleString() : '';
                 const endDate = job.end_time ? new Date(job.end_time).toLocaleString() : '';
                 
+                // Calculate duration in hours (with 2 decimal precision)
+                let duration = '';
+                if (job.start_time && job.end_time) {
+                    const start = new Date(job.start_time);
+                    const end = new Date(job.end_time);
+                    const diffMs = end - start;
+                    const diffHours = diffMs / (1000 * 60 * 60);
+                    duration = diffHours.toFixed(2);
+                }
+                
                 row.innerHTML = `
                     <td>${startDate}</td>
                     <td>${endDate}</td>
-                                                    <td>${job.tech_name || ''}</td>
+                    <td>${duration}</td>
+                    <td>${job.tech_name || ''}</td>
                     <td>${job.location || ''}</td>
                     <td>${job.notes || ''}</td>
                 `;
@@ -501,18 +513,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Convert jobs data to CSV format
         function convertToCsv(jobs) {
             // CSV header
-            let csv = 'Start Date/Time,End Date/Time,Tech Name,Location,Notes\n';
+            let csv = 'Start Date/Time,End Date/Time,Duration (Hours),Tech Name,Location,Notes\n';
             
             // CSV rows
             jobs.forEach(job => {
                 // Escape any commas or quotes in the data
                 const startDate = job.start_time ? `"${new Date(job.start_time).toLocaleString()}"` : '""';
                 const endDate = job.end_time ? `"${new Date(job.end_time).toLocaleString()}"` : '""';
+                
+                // Calculate duration in hours (with 2 decimal precision)
+                let duration = '';
+                if (job.start_time && job.end_time) {
+                    const start = new Date(job.start_time);
+                    const end = new Date(job.end_time);
+                    const diffMs = end - start;
+                    const diffHours = diffMs / (1000 * 60 * 60);
+                    duration = diffHours.toFixed(2);
+                }
+                
                 const techName = job.tech_name ? `"${job.tech_name.replace(/"/g, '""')}"` : '""';
                 const location = job.location ? `"${job.location.replace(/"/g, '""')}"` : '""';
                 const notes = job.notes ? `"${job.notes.replace(/"/g, '""')}"` : '""';
                 
-                csv += `${startDate},${endDate},${techName},${location},${notes}\n`;
+                csv += `${startDate},${endDate},${duration},${techName},${location},${notes}\n`;
             });
             
             return csv;
