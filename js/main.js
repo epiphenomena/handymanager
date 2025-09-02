@@ -103,6 +103,16 @@ document.addEventListener('DOMContentLoaded', function() {
         settingsSection.style.display = 'block';
     }
     
+    // Format date without seconds and year
+    function formatDateWithoutSecondsOrYear(date) {
+        // Format: MM/DD HH:MM (24-hour format)
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${month}/${day} ${hours}:${minutes}`;
+    }
+
     // Show history section and hide others
     function showHistorySection() {
         jobsSection.style.display = 'none';
@@ -178,7 +188,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const link = document.createElement('a');
             link.href = `job-details.html?id=${job.id}`;
             link.className = 'job-link';
-            link.textContent = `${job.location} - Started: ${new Date(job.start_time).toLocaleString()}`;
+            link.textContent = `${job.location} - Started: ${formatDateWithoutSecondsOrYear(new Date(job.start_time))}`;
             listItem.appendChild(link);
             jobsList.appendChild(listItem);
         });
@@ -208,8 +218,8 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const timeInfo = document.createElement('div');
             timeInfo.className = 'job-time';
-            const startTime = new Date(job.start_time).toLocaleString();
-            const endTime = job.end_time ? new Date(job.end_time).toLocaleString() : 'In Progress';
+            const startTime = formatDateWithoutSecondsOrYear(new Date(job.start_time));
+            const endTime = job.end_time ? formatDateWithoutSecondsOrYear(new Date(job.end_time)) : 'In Progress';
             timeInfo.textContent = `Started: ${startTime} | Ended: ${endTime}`;
             
             const editBtn = document.createElement('button');

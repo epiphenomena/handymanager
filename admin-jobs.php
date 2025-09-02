@@ -219,6 +219,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             mainContent.style.display = 'block';
         }
 
+        // Format date without seconds and year
+        function formatDateWithoutSecondsOrYear(date) {
+            // Format: MM/DD HH:MM (24-hour format)
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${month}/${day} ${hours}:${minutes}`;
+        }
+
         // Show settings button event
         showSettingsBtn.addEventListener('click', function() {
             showSettingsSection();
@@ -377,9 +387,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             jobs.forEach(job => {
                 const row = document.createElement('tr');
 
-                // Format dates
-                const startDate = job.start_time ? new Date(job.start_time).toLocaleString() : '';
-                const endDate = job.end_time ? new Date(job.end_time).toLocaleString() : '';
+                // Format dates without seconds and years
+                const startDate = job.start_time ? formatDateWithoutSecondsOrYear(new Date(job.start_time)) : '';
+                const endDate = job.end_time ? formatDateWithoutSecondsOrYear(new Date(job.end_time)) : '';
 
                 // Calculate duration in hours (with 2 decimal precision)
                 let duration = '';
@@ -519,8 +529,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // CSV rows
             jobs.forEach(job => {
                 // Escape any commas or quotes in the data
-                const startDate = job.start_time ? `"${new Date(job.start_time).toLocaleString()}"` : '""';
-                const endDate = job.end_time ? `"${new Date(job.end_time).toLocaleString()}"` : '""';
+                const startDate = job.start_time ? `"${formatDateWithoutSecondsOrYear(new Date(job.start_time))}"` : '""';
+                const endDate = job.end_time ? `"${formatDateWithoutSecondsOrYear(new Date(job.end_time))}"` : '""';
 
                 // Calculate duration in hours (with 2 decimal precision)
                 let duration = '';

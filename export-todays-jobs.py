@@ -16,6 +16,18 @@ import csv
 from datetime import datetime
 import argparse
 
+
+def format_datetime_without_seconds_or_year(datetime_str):
+    """Format datetime string without seconds and year."""
+    if not datetime_str:
+        return ''
+    
+    # Parse the datetime string
+    dt = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+    
+    # Format as MM/DD HH:MM (24-hour format)
+    return dt.strftime('%m/%d %H:%M')
+
 def export_todays_jobs(db_file, output_file):
     """Export today's jobs to CSV file."""
     try:
@@ -58,8 +70,8 @@ def export_todays_jobs(db_file, output_file):
             for job in jobs:
                 status = 'In Progress' if job['closed_at'] is None else 'Completed'
                 writer.writerow({
-                    'Start Time': job['start_time'],
-                    'End Time': job['end_time'] or '',
+                    'Start Time': format_datetime_without_seconds_or_year(job['start_time']),
+                    'End Time': format_datetime_without_seconds_or_year(job['end_time']) if job['end_time'] else '',
                     'Tech Name': job['tech_name'],
                     'Location': job['location'],
                     'Notes': job['notes'] or '',
