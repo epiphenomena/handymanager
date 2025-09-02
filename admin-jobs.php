@@ -17,21 +17,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Get JSON input
     $input = json_decode(file_get_contents('php://input'), true);
-    
+
     // Validate admin token
     if (!isset($input['token']) || !verifyAdminToken($input['token'])) {
         sendJsonResponse(['success' => false, 'message' => 'Invalid admin token']);
     }
-    
+
     // Get filters from input
     $filters = [];
     if (isset($input['filters'])) {
         $filters = $input['filters'];
     }
-    
+
     // Get jobs from database
     $jobs = getAllJobs($filters);
-    
+
     sendJsonResponse(['success' => true, 'jobs' => $jobs]);
 }
 
@@ -65,6 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background-color: #fff;
             border-radius: 0.375rem;
             padding: 15px;
+            overflow-x: scroll;
         }
         .status-badge {
             font-size: 0.75em;
@@ -98,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="row">
             <div class="col-12">
                 <h1 class="mb-4">HandyManager Admin Dashboard</h1>
-                
+
                 <!-- Settings Section -->
                 <div class="settings-section mb-4" id="settingsSection">
                     <h4>Settings</h4>
@@ -114,13 +115,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <button type="button" class="btn btn-primary" id="saveSettings">Save Settings</button>
                 </div>
-                
+
                 <!-- Main Content (initially hidden) -->
                 <div class="main-content" id="mainContent">
                     <button type="button" class="btn btn-secondary settings-btn" id="showSettings">
                         <i class="bi bi-gear"></i> Settings
                     </button>
-                    
+
                     <div class="filter-section mb-4">
                         <h4>Filters</h4>
                         <form id="filterForm">
@@ -154,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                         </form>
                     </div>
-                    
+
                     <div class="table-container">
                         <table class="table table-striped table-hover" id="jobsTable">
                             <thead class="table-dark">
@@ -194,7 +195,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         const clearFiltersBtn = document.getElementById('clearFilters');
         const exportCsvBtn = document.getElementById('exportCsv');
         const jobsTableBody = document.querySelector('#jobsTable tbody');
-        
+
         // Toggle token visibility
         toggleTokenVisibilityBtn.addEventListener('click', function() {
             if (adminTokenInput.type === 'password') {
@@ -205,24 +206,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 toggleTokenVisibilityBtn.innerHTML = '<i class="bi bi-eye"></i>';
             }
         });
-        
+
         // Show settings section
         function showSettingsSection() {
             settingsSection.style.display = 'block';
             mainContent.style.display = 'none';
         }
-        
+
         // Show main content
         function showMainContent() {
             settingsSection.style.display = 'none';
             mainContent.style.display = 'block';
         }
-        
+
         // Show settings button event
         showSettingsBtn.addEventListener('click', function() {
             showSettingsSection();
         });
-        
+
         // Load saved token if available
         document.addEventListener('DOMContentLoaded', function() {
             const savedToken = localStorage.getItem('handymanager_admin_token');
@@ -234,7 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 showSettingsSection();
             }
         });
-        
+
         // Save settings
         saveSettingsBtn.addEventListener('click', function() {
             const token = adminTokenInput.value.trim();
@@ -242,14 +243,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 alert('Please enter an admin token');
                 return;
             }
-            
+
             // Always save token in browser storage
             localStorage.setItem('handymanager_admin_token', token);
-            
+
             // Verify token with server
             verifyTokenWithServer(token);
         });
-        
+
         // Verify token with server
         async function verifyTokenWithServer(token) {
             try {
@@ -263,13 +264,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         filters: {}
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     // Token is valid - always save it
                     localStorage.setItem('handymanager_admin_token', token);
-                    
+
                     showMainContent();
                     loadFilterOptions(data); // Pass the data to loadFilterOptions
                     loadJobs({}, data); // Pass the data to loadJobs
@@ -281,7 +282,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 alert('Error verifying token');
             }
         }
-        
+
         // Load filter options (techs and locations) from the provided data
         function loadFilterOptions(data) {
             try {
@@ -292,11 +293,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 while (locationFilter.options.length > 1) {
                     locationFilter.remove(1);
                 }
-                
+
                 // Extract unique techs and locations from the jobs data
                 const techs = [...new Set(data.jobs.map(job => job.tech_name).filter(Boolean))].sort();
                 const locations = [...new Set(data.jobs.map(job => job.location).filter(Boolean))].sort();
-                
+
                 // Populate techs dropdown
                 techs.forEach(tech => {
                     const option = document.createElement('option');
@@ -304,7 +305,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     option.textContent = tech;
                     techFilter.appendChild(option);
                 });
-                
+
                 // Populate locations dropdown
                 locations.forEach(location => {
                     const option = document.createElement('option');
@@ -316,7 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 console.error('Error loading filter options:', error);
             }
         }
-        
+
         // Load jobs with current filters
         async function loadJobs(filters = {}, initialData = null) {
             // If we have initial data and no filters, use the initial data
@@ -324,14 +325,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 renderJobsTable(initialData.jobs);
                 return;
             }
-            
+
             const token = localStorage.getItem('handymanager_admin_token');
             if (!token) {
                 alert('Admin token not found. Please re-authenticate.');
                 showSettingsSection();
                 return;
             }
-            
+
             try {
                 const response = await fetch('admin-jobs.php', {
                     method: 'POST',
@@ -343,9 +344,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         filters: filters
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     renderJobsTable(data.jobs);
                 } else {
@@ -361,25 +362,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 alert('Error loading jobs');
             }
         }
-        
+
         // Render jobs in the table
         function renderJobsTable(jobs) {
             jobsTableBody.innerHTML = '';
-            
+
             if (jobs.length === 0) {
                 const row = document.createElement('tr');
                 row.innerHTML = '<td colspan="6" class="text-center">No jobs found</td>';
                 jobsTableBody.appendChild(row);
                 return;
             }
-            
+
             jobs.forEach(job => {
                 const row = document.createElement('tr');
-                
+
                 // Format dates
                 const startDate = job.start_time ? new Date(job.start_time).toLocaleString() : '';
                 const endDate = job.end_time ? new Date(job.end_time).toLocaleString() : '';
-                
+
                 // Calculate duration in hours (with 2 decimal precision)
                 let duration = '';
                 if (job.start_time && job.end_time) {
@@ -389,7 +390,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const diffHours = diffMs / (1000 * 60 * 60);
                     duration = diffHours.toFixed(2);
                 }
-                
+
                 row.innerHTML = `
                     <td>${startDate}</td>
                     <td>${endDate}</td>
@@ -398,40 +399,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <td>${job.location || ''}</td>
                     <td>${job.notes || ''}</td>
                 `;
-                
+
                 jobsTableBody.appendChild(row);
             });
         }
-        
+
         // Apply filters automatically when they change
         function applyFilters() {
             const filters = {};
-            
+
             if (dateFromInput.value) {
                 filters.date_from = dateFromInput.value;
             }
-            
+
             if (dateToInput.value) {
                 filters.date_to = dateToInput.value;
             }
-            
+
             if (techFilter.value) {
                 filters.tech = techFilter.value;
             }
-            
+
             if (locationFilter.value) {
                 filters.location = locationFilter.value;
             }
-            
+
             loadJobs(filters);
         }
-        
+
         // Add event listeners for automatic filter application
         dateFromInput.addEventListener('change', applyFilters);
         dateToInput.addEventListener('change', applyFilters);
         techFilter.addEventListener('change', applyFilters);
         locationFilter.addEventListener('change', applyFilters);
-        
+
         // Clear filters
         clearFiltersBtn.addEventListener('click', function() {
             dateFromInput.value = '';
@@ -440,34 +441,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             locationFilter.value = '';
             loadJobs();
         });
-        
+
         // Export to CSV
         exportCsvBtn.addEventListener('click', async function() {
             const filters = {};
-            
+
             if (dateFromInput.value) {
                 filters.date_from = dateFromInput.value;
             }
-            
+
             if (dateToInput.value) {
                 filters.date_to = dateToInput.value;
             }
-            
+
             if (techFilter.value) {
                 filters.tech = techFilter.value;
             }
-            
+
             if (locationFilter.value) {
                 filters.location = locationFilter.value;
             }
-            
+
             const token = localStorage.getItem('handymanager_admin_token');
             if (!token) {
                 alert('Admin token not found. Please re-authenticate.');
                 showSettingsSection();
                 return;
             }
-            
+
             try {
                 const response = await fetch('admin-jobs.php', {
                     method: 'POST',
@@ -479,13 +480,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         filters: filters
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     // Convert to CSV
                     const csvContent = convertToCsv(data.jobs);
-                    
+
                     // Create download link
                     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                     const url = URL.createObjectURL(blob);
@@ -509,18 +510,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 alert('Error exporting data');
             }
         });
-        
+
         // Convert jobs data to CSV format
         function convertToCsv(jobs) {
             // CSV header
             let csv = 'Start Date/Time,End Date/Time,Duration (Hours),Tech Name,Location,Notes\n';
-            
+
             // CSV rows
             jobs.forEach(job => {
                 // Escape any commas or quotes in the data
                 const startDate = job.start_time ? `"${new Date(job.start_time).toLocaleString()}"` : '""';
                 const endDate = job.end_time ? `"${new Date(job.end_time).toLocaleString()}"` : '""';
-                
+
                 // Calculate duration in hours (with 2 decimal precision)
                 let duration = '';
                 if (job.start_time && job.end_time) {
@@ -530,14 +531,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const diffHours = diffMs / (1000 * 60 * 60);
                     duration = diffHours.toFixed(2);
                 }
-                
+
                 const techName = job.tech_name ? `"${job.tech_name.replace(/"/g, '""')}"` : '""';
                 const location = job.location ? `"${job.location.replace(/"/g, '""')}"` : '""';
                 const notes = job.notes ? `"${job.notes.replace(/"/g, '""')}"` : '""';
-                
+
                 csv += `${startDate},${endDate},${duration},${techName},${location},${notes}\n`;
             });
-            
+
             return csv;
         }
     </script>
