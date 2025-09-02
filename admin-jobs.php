@@ -110,11 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <i class="bi bi-eye"></i>
                             </button>
                         </div>
-                        <div class="form-text">Enter your admin token to access the dashboard.</div>
-                    </div>
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="saveToken">
-                        <label class="form-check-label" for="saveToken">Save token in browser storage</label>
+                        <div class="form-text">Enter your admin token to access the dashboard. Token will be saved in browser storage.</div>
                     </div>
                     <button type="button" class="btn btn-primary" id="saveSettings">Save Settings</button>
                 </div>
@@ -233,7 +229,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const savedToken = localStorage.getItem('handymanager_admin_token');
             if (savedToken) {
                 adminTokenInput.value = savedToken;
-                saveTokenCheckbox.checked = true;
                 showMainContent();
                 loadFilterOptions();
                 loadJobs();
@@ -249,6 +244,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 alert('Please enter an admin token');
                 return;
             }
+            
+            // Always save token in browser storage
+            localStorage.setItem('handymanager_admin_token', token);
             
             // Verify token with server
             verifyTokenWithServer(token);
@@ -271,12 +269,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const data = await response.json();
                 
                 if (data.success) {
-                    // Token is valid
-                    if (saveTokenCheckbox.checked) {
-                        localStorage.setItem('handymanager_admin_token', token);
-                    } else {
-                        localStorage.removeItem('handymanager_admin_token');
-                    }
+                    // Token is valid - always save it
+                    localStorage.setItem('handymanager_admin_token', token);
                     
                     showMainContent();
                     loadFilterOptions();
@@ -297,16 +291,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const data = await response.json();
                 
                 if (data.success) {
-                    // Populate techs dropdown
-        data.options.techs.forEach(tech => {
-            const option = document.createElement('option');
-            option.value = tech;
-            option.textContent = tech;
-            techFilter.appendChild(option);
-        });
+                    // Clear existing options except the first one (default)
+                    while (techFilter.options.length > 1) {
+                        techFilter.remove(1);
+                    }
+                    while (locationFilter.options.length > 1) {
+                        locationFilter.remove(1);
+                    }
                     
-                    // Populate locations dropdown
-                    data.options.locations.forEach(location => {
+                    // Remove duplicates and sort techs alphabetically
+                    const uniqueTechs = [...new Set(data.options.techs)].sort();
+                    uniqueTechs.forEach(tech => {
+                        const option = document.createElement('option');
+                        option.value = tech;
+                        option.textContent = tech;
+                        techFilter.appendChild(option);
+                    });
+                    
+                    // Remove duplicates and sort locations alphabetically
+                    const uniqueLocations = [...new Set(data.options.locations)].sort();
+                    uniqueLocations.forEach(location => {
                         const option = document.createElement('option');
                         option.value = location;
                         option.textContent = location;

@@ -98,7 +98,7 @@ function updateJob($jobId, $startTime, $endTime, $location, $notes) {
     return $stmt->execute([
         'start_time' => $startTime,
         'end_time' => $endTime,
-        'location' => $location,
+        'location' => trim($location),
         'notes' => $notes,
         'job_id' => $jobId
     ]);
@@ -115,9 +115,9 @@ function createJob($techName, $startTime, $location) {
     
     return $stmt->execute([
         'created_at' => date('Y-m-d H:i:s'),
-        'tech_name' => $techName,
+        'tech_name' => trim($techName),
         'start_time' => $startTime,
-        'location' => $location
+        'location' => trim($location)
     ]);
 }
 
@@ -133,7 +133,7 @@ function completeJob($jobId, $endTime, $notes) {
     
     return $stmt->execute([
         'end_time' => $endTime,
-        'notes' => $notes,
+        'notes' => trim($notes),
         'closed_at' => date('Y-m-d H:i:s'),
         'job_id' => $jobId
     ]);
@@ -162,12 +162,12 @@ function getAllJobs($filters = []) {
         
         if (!empty($filters['tech'])) {
             $whereConditions[] = "tech_name = :tech";
-            $params['tech'] = $filters['tech'];
+            $params['tech'] = trim($filters['tech']);
         }
         
         if (!empty($filters['location'])) {
             $whereConditions[] = "location = :location";
-            $params['location'] = $filters['location'];
+            $params['location'] = trim($filters['location']);
         }
         
         if (!empty($whereConditions)) {
@@ -196,11 +196,11 @@ function getFilterOptions() {
     
     // Get unique techs
     $stmt = $pdo->query("SELECT DISTINCT tech_name FROM jobs WHERE tech_name IS NOT NULL ORDER BY tech_name");
-    $techs = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $techs = array_map('trim', $stmt->fetchAll(PDO::FETCH_COLUMN));
     
     // Get unique locations
     $stmt = $pdo->query("SELECT DISTINCT location FROM jobs WHERE location IS NOT NULL ORDER BY location");
-    $locations = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $locations = array_map('trim', $stmt->fetchAll(PDO::FETCH_COLUMN));
     
     return ['techs' => $techs, 'locations' => $locations];
 }
@@ -234,11 +234,11 @@ function migrateFromJson() {
         foreach ($jsonData['jobs'] as $job) {
             $stmt->execute([
                 'created_at' => $job['created_at'] ?? null,
-                'tech_name' => $job['tech_name'] ?? null,
+                'tech_name' => isset($job['tech_name']) ? trim($job['tech_name']) : null,
                 'start_time' => $job['start_time'] ?? null,
-                'location' => $job['location'] ?? null,
+                'location' => isset($job['location']) ? trim($job['location']) : null,
                 'end_time' => $job['end_time'] ?? null,
-                'notes' => $job['notes'] ?? null,
+                'notes' => isset($job['notes']) ? trim($job['notes']) : null,
                 'closed_at' => $job['closed_at'] ?? null
             ]);
         }

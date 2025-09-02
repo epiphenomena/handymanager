@@ -40,8 +40,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const startTime = startTimeInput.value;
         const endDate = endDateInput.value;
         const endTime = endTimeInput.value;
-        const location = locationInput.value;
-        const notes = notesInput.value;
+        const location = locationInput.value.trim(); // Trim whitespace
+        const notes = notesInput.value.trim(); // Trim whitespace
         
         if (!startDate || !startTime || !location) {
             alert('Please fill in all required fields');

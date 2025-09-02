@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const token = localStorage.getItem('handymanager_token');
         const endDate = document.getElementById('end-date').value;
         const endTime = document.getElementById('end-time').value;
-        const notes = document.getElementById('notes').value;
+        const notes = document.getElementById('notes').value.trim(); // Trim whitespace
         
         // Combine date and time
         const endDateTime = `${endDate} ${endTime}`;

@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const techName = localStorage.getItem('handymanager_tech_name');
         const startDate = document.getElementById('start-date').value;
         const startTime = document.getElementById('start-time').value;
-        const location = document.getElementById('location').value;
+        const location = document.getElementById('location').value.trim(); // Trim whitespace
         
         // Combine date and time
         const startDateTime = `${startDate} ${startTime}`;
@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify({
                 token: token,
-                tech_name: techName,
+                tech_name: techName.trim(), // Trim whitespace
                 start_time: startDateTime,
                 location: location
             })
