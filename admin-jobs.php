@@ -148,7 +148,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             <div class="row">
                                 <div class="col-md-12">
-                                    <button type="button" class="btn btn-primary" id="applyFilters">Apply Filters</button>
                                     <button type="button" class="btn btn-secondary" id="clearFilters">Clear Filters</button>
                                     <button type="button" class="btn btn-success float-end" id="exportCsv">Export to CSV</button>
                                 </div>
@@ -191,7 +190,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         const dateToInput = document.getElementById('dateTo');
         const techFilter = document.getElementById('techFilter');
         const locationFilter = document.getElementById('locationFilter');
-        const applyFiltersBtn = document.getElementById('applyFilters');
         const clearFiltersBtn = document.getElementById('clearFilters');
         const exportCsvBtn = document.getElementById('exportCsv');
         const jobsTableBody = document.querySelector('#jobsTable tbody');
@@ -230,8 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (savedToken) {
                 adminTokenInput.value = savedToken;
                 showMainContent();
-                loadFilterOptions();
-                loadJobs();
+                verifyTokenWithServer(savedToken); // This will load filters and jobs
             } else {
                 showSettingsSection();
             }
@@ -273,8 +270,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     localStorage.setItem('handymanager_admin_token', token);
                     
                     showMainContent();
-                    loadFilterOptions();
-                    loadJobs();
+                    loadFilterOptions(data); // Pass the data to loadFilterOptions
+                    loadJobs({}, data); // Pass the data to loadJobs
                 } else {
                     alert('Invalid admin token: ' + data.message);
                 }
@@ -284,46 +281,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
-        // Load filter options (techs and locations)
-        async function loadFilterOptions() {
+        // Load filter options (techs and locations) from the provided data
+        function loadFilterOptions(data) {
             try {
-                const response = await fetch('get-filter-options.php');
-                const data = await response.json();
-                
-                if (data.success) {
-                    // Clear existing options except the first one (default)
-                    while (techFilter.options.length > 1) {
-                        techFilter.remove(1);
-                    }
-                    while (locationFilter.options.length > 1) {
-                        locationFilter.remove(1);
-                    }
-                    
-                    // Remove duplicates and sort techs alphabetically
-                    const uniqueTechs = [...new Set(data.options.techs)].sort();
-                    uniqueTechs.forEach(tech => {
-                        const option = document.createElement('option');
-                        option.value = tech;
-                        option.textContent = tech;
-                        techFilter.appendChild(option);
-                    });
-                    
-                    // Remove duplicates and sort locations alphabetically
-                    const uniqueLocations = [...new Set(data.options.locations)].sort();
-                    uniqueLocations.forEach(location => {
-                        const option = document.createElement('option');
-                        option.value = location;
-                        option.textContent = location;
-                        locationFilter.appendChild(option);
-                    });
+                // Clear existing options except the first one (default)
+                while (techFilter.options.length > 1) {
+                    techFilter.remove(1);
                 }
+                while (locationFilter.options.length > 1) {
+                    locationFilter.remove(1);
+                }
+                
+                // Extract unique techs and locations from the jobs data
+                const techs = [...new Set(data.jobs.map(job => job.tech_name).filter(Boolean))].sort();
+                const locations = [...new Set(data.jobs.map(job => job.location).filter(Boolean))].sort();
+                
+                // Populate techs dropdown
+                techs.forEach(tech => {
+                    const option = document.createElement('option');
+                    option.value = tech;
+                    option.textContent = tech;
+                    techFilter.appendChild(option);
+                });
+                
+                // Populate locations dropdown
+                locations.forEach(location => {
+                    const option = document.createElement('option');
+                    option.value = location;
+                    option.textContent = location;
+                    locationFilter.appendChild(option);
+                });
             } catch (error) {
                 console.error('Error loading filter options:', error);
             }
         }
         
         // Load jobs with current filters
-        async function loadJobs(filters = {}) {
+        async function loadJobs(filters = {}, initialData = null) {
+            // If we have initial data and no filters, use the initial data
+            if (initialData && Object.keys(filters).length === 0) {
+                renderJobsTable(initialData.jobs);
+                return;
+            }
+            
             const token = localStorage.getItem('handymanager_admin_token');
             if (!token) {
                 alert('Admin token not found. Please re-authenticate.');
@@ -391,8 +391,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             });
         }
         
-        // Apply filters
-        applyFiltersBtn.addEventListener('click', function() {
+        // Apply filters automatically when they change
+        function applyFilters() {
             const filters = {};
             
             if (dateFromInput.value) {
@@ -412,7 +412,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             loadJobs(filters);
-        });
+        }
+        
+        // Add event listeners for automatic filter application
+        dateFromInput.addEventListener('change', applyFilters);
+        dateToInput.addEventListener('change', applyFilters);
+        techFilter.addEventListener('change', applyFilters);
+        locationFilter.addEventListener('change', applyFilters);
         
         // Clear filters
         clearFiltersBtn.addEventListener('click', function() {
