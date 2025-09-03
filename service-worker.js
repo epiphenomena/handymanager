@@ -22,6 +22,7 @@ self.addEventListener('fetch', event => {
     if (!urlsToCache.includes(url.pathname)) {
         // Add a unique version number (e.g., from a build script)
         const newUrl = `${url.origin}${url.pathname}?v=${Date.now()}`;
+        console.log(`Requesting: ${newUrl}`);
         const newRequest = new Request(newUrl, event.request);
 
     // Respond to the page with the result of the new, cache-busting fetch
