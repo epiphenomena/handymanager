@@ -26,7 +26,10 @@
                 </div>
                 <div class="form-group">
                     <label for="location">Location:</label>
-                    <input type="text" id="location" required>
+                    <input type="text" id="location" list="location-options" required>
+                    <datalist id="location-options">
+                        <!-- Options will be populated by JavaScript -->
+                    </datalist>
                 </div>
                 <button type="submit" class="primary-btn">Start Job</button>
             </form>
