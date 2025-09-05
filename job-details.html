@@ -104,14 +104,10 @@ Materials:
             // Adjust textarea height to fill viewport
             function adjustTextareaHeight() {
                 const viewportHeight = window.innerHeight;
-                const headerHeight = document.querySelector('header').offsetHeight;
-                const formHeadingHeight = document.querySelector('h2').offsetHeight;
-                const formGroupsHeight = Array.from(document.querySelectorAll('.form-group:not(:last-child)'))
-                    .reduce((total, el) => total + el.offsetHeight, 0);
-                const buttonRowHeight = document.querySelector('.button-row').offsetHeight;
-                const margins = 2; // Approximate margins/padding
+                const containerHeight = document.querySelector('.container').offsetHeight;
+                const notesHeight = notesField.offsetHeight
 
-                const availableHeight = viewportHeight - headerHeight - formHeadingHeight - formGroupsHeight - buttonRowHeight - margins;
+                const availableHeight = viewportHeight - (containerHeight - notesHeight);
                 notesField.style.height = Math.max(200, availableHeight) + 'px';
             }
 

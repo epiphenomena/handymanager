@@ -44,8 +44,7 @@ h3 {
 }
 
 .button-group {
-    display: flex;
-    gap: 8px;
+    display: grid;
 }
 
 .form-group {
@@ -220,7 +219,7 @@ button:hover, .primary-btn:hover, .secondary-btn:hover, .cancel-btn:hover {
     .container {
         max-width: 600px;
     }
-    
+
     .secondary-btn, .cancel-btn {
         width: auto;
     }
