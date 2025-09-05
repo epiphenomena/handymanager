@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit(0);
 }
 
-// Check if it's a POST request for data export
+// Check if it's a POST request
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Get JSON input
     $input = json_decode(file_get_contents('php://input'), true);
@@ -23,16 +23,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         sendJsonResponse(['success' => false, 'message' => 'Invalid admin token']);
     }
 
-    // Get filters from input
-    $filters = [];
-    if (isset($input['filters'])) {
-        $filters = $input['filters'];
+    // Check if it's a delete action
+    if (isset($input['action']) && $input['action'] === 'delete_job') {
+        // Handle job deletion
+        if (!isset($input['job_id'])) {
+            sendJsonResponse(['success' => false, 'message' => 'Job ID is required']);
+        }
+
+        $jobId = $input['job_id'];
+        
+        // Delete the job from database
+        if (deleteJob($jobId)) {
+            sendJsonResponse(['success' => true, 'message' => 'Job deleted successfully']);
+        } else {
+            sendJsonResponse(['success' => false, 'message' => 'Failed to delete job']);
+        }
+    } else {
+        // Handle data export
+        // Get filters from input
+        $filters = [];
+        if (isset($input['filters'])) {
+            $filters = $input['filters'];
+        }
+
+        // Get jobs from database
+        $jobs = getAllJobs($filters);
+
+        sendJsonResponse(['success' => true, 'jobs' => $jobs]);
     }
-
-    // Get jobs from database
-    $jobs = getAllJobs($filters);
-
-    sendJsonResponse(['success' => true, 'jobs' => $jobs]);
 }
 
 // For GET requests, show the admin interface
@@ -166,6 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <th>Tech Name</th>
                                     <th>Location</th>
                                     <th>Notes</th>
+                                    <th>Delete</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -408,10 +427,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <td>${job.tech_name || ''}</td>
                     <td>${job.location || ''}</td>
                     <td>${job.notes || ''}</td>
+                    <td><button class="btn btn-secondary delete-btn" data-job-id="${job.id}">Delete?</button></td>
                 `;
 
                 jobsTableBody.appendChild(row);
             });
+            
+            // Add event listeners for delete buttons
+            document.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const jobId = this.getAttribute('data-job-id');
+                    if (this.classList.contains('btn-secondary')) {
+                        // First click: change to red "DELETE!" button
+                        this.classList.remove('btn-secondary');
+                        this.classList.add('btn-danger');
+                        this.textContent = 'DELETE!';
+                    } else {
+                        // Second click: delete the job
+                        deleteJob(jobId);
+                    }
+                });
+            });
+        }
+
+        // Delete job function
+        async function deleteJob(jobId) {
+            const token = localStorage.getItem('handymanager_admin_token');
+            if (!token) {
+                alert('Admin token not found. Please re-authenticate.');
+                showSettingsSection();
+                return;
+            }
+
+            try {
+                const response = await fetch('admin-jobs.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        token: token,
+                        action: 'delete_job',
+                        job_id: jobId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Reload the page to show updated data
+                    location.reload();
+                } else {
+                    alert('Error deleting job: ' + data.message);
+                    if (data.message.includes('Invalid admin token')) {
+                        // Token is no longer valid, show settings again
+                        localStorage.removeItem('handymanager_admin_token');
+                        showSettingsSection();
+                    }
+                }
+            } catch (error) {
+                console.error('Error deleting job:', error);
+                alert('Error deleting job');
+            }
         }
 
         // Apply filters automatically when they change

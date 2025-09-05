@@ -177,7 +177,7 @@ function getAllJobs($filters = []) {
     
     // Sort by closed_at DESC (nulls first for in-progress jobs) then by start_time DESC
     $sql = "
-        SELECT start_time, end_time, tech_name, location, notes
+        SELECT id, start_time, end_time, tech_name, location, notes
         FROM jobs
         $whereClause
         ORDER BY 
@@ -203,6 +203,18 @@ function getFilterOptions() {
     $locations = array_map('trim', $stmt->fetchAll(PDO::FETCH_COLUMN));
     
     return ['techs' => $techs, 'locations' => $locations];
+}
+
+// Function to delete a job by ID
+function deleteJob($jobId) {
+    $pdo = getDbConnection();
+    
+    $stmt = $pdo->prepare("
+        DELETE FROM jobs 
+        WHERE id = :job_id
+    ");
+    
+    return $stmt->execute(['job_id' => $jobId]);
 }
 
 // Function to migrate existing JSON data to SQLite (if needed)
@@ -233,6 +245,7 @@ function migrateFromJson() {
         
         foreach ($jsonData['jobs'] as $job) {
             $stmt->execute([
+                'id' => $job['id'] ?? null,
                 'created_at' => $job['created_at'] ?? null,
                 'tech_name' => isset($job['tech_name']) ? trim($job['tech_name']) : null,
                 'start_time' => $job['start_time'] ?? null,
