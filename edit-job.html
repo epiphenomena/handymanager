@@ -14,25 +14,25 @@
             gap: 16px;
             margin-top: 16px;
         }
-        
+
         .submit-btn {
             flex: 3;
         }
-        
+
         .cancel-btn {
             flex: 1;
         }
-        
+
         #notes {
             min-height: 200px;
             resize: none;
         }
-        
+
         @media (max-width: 599px) {
             .button-row {
                 flex-direction: column;
             }
-            
+
             .submit-btn, .cancel-btn {
                 width: 100%;
             }
@@ -70,7 +70,7 @@
                 <div class="form-group">
                     <label for="notes">Notes:</label>
                     <textarea id="notes" placeholder="Job Notes:
-- 
+-
 
 Materials:
 - "></textarea>
@@ -83,8 +83,8 @@ Materials:
             </form>
         </main>
     </div>
-    
-    <script src="js/edit-job.js"></script>
+
+    <script src="js/edit-job.js?v=1.2"></script>
     <script>
         // Handle auto-inserting "- " when pressing enter after a dash line
         document.getElementById('notes').addEventListener('keydown', function(e) {
@@ -94,7 +94,7 @@ Materials:
                 const beforeCursor = text.substring(0, cursorPosition);
                 const lines = beforeCursor.split('\n');
                 const currentLine = lines[lines.length - 1];
-                
+
                 // Check if current line starts with "- "
                 if (currentLine.trim().startsWith('-')) {
                     e.preventDefault();
@@ -105,14 +105,14 @@ Materials:
                 }
             }
         });
-        
+
         // Prefill notes with template if empty when loading
         document.addEventListener('DOMContentLoaded', function() {
             const notesField = document.getElementById('notes');
             if (!notesField.value.trim()) {
                 notesField.value = "Job Notes:\n- \n\nMaterials:\n- ";
             }
-            
+
             // Adjust textarea height to fill viewport
             function adjustTextareaHeight() {
                 const viewportHeight = window.innerHeight;
@@ -122,14 +122,14 @@ Materials:
                     .reduce((total, el) => total + el.offsetHeight, 0);
                 const buttonRowHeight = document.querySelector('.button-row').offsetHeight;
                 const margins = 32; // Approximate margins/padding
-                
+
                 const availableHeight = viewportHeight - headerHeight - formHeadingHeight - formGroupsHeight - buttonRowHeight - margins;
                 notesField.style.height = Math.max(200, availableHeight) + 'px';
             }
-            
+
             // Initial adjustment
             adjustTextareaHeight();
-            
+
             // Adjust on window resize
             window.addEventListener('resize', adjustTextareaHeight);
         });
