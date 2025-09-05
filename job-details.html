@@ -7,6 +7,37 @@
     <link rel="stylesheet" href="css/styles.css">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4CAF50">
+    <style>
+        .button-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-top: 16px;
+        }
+        
+        .submit-btn {
+            flex: 3;
+        }
+        
+        .cancel-btn {
+            flex: 1;
+        }
+        
+        #notes {
+            min-height: 200px;
+            resize: none;
+        }
+        
+        @media (max-width: 599px) {
+            .button-row {
+                flex-direction: column;
+            }
+            
+            .submit-btn, .cancel-btn {
+                width: 100%;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -26,15 +57,70 @@
                 </div>
                 <div class="form-group">
                     <label for="notes">Notes:</label>
-                    <textarea id="notes" rows="4"></textarea>
+                    <textarea id="notes" placeholder="Job Notes:
+- 
+
+Materials:
+- "></textarea>
                 </div>
                 <input type="hidden" id="job-id">
-                <button type="submit" class="primary-btn">Complete Job</button>
+                <div class="button-row">
+                    <button type="submit" class="primary-btn submit-btn">Complete Job</button>
+                    <button type="button" class="cancel-btn" onclick="window.location.href='./'">Cancel</button>
+                </div>
             </form>
-            <button class="cancel-btn" onclick="window.location.href='./'">Cancel</button>
         </main>
     </div>
 
     <script src="js/job-details.js?v=1.2"></script>
+    <script>
+        // Handle auto-inserting "- " when pressing enter after a dash line
+        document.getElementById('notes').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const cursorPosition = this.selectionStart;
+                const text = this.value;
+                const beforeCursor = text.substring(0, cursorPosition);
+                const lines = beforeCursor.split('\n');
+                const currentLine = lines[lines.length - 1];
+                
+                // Check if current line starts with "- "
+                if (currentLine.trim().startsWith('-')) {
+                    e.preventDefault();
+                    const newValue = text.substring(0, cursorPosition) + '\n- ' + text.substring(cursorPosition);
+                    this.value = newValue;
+                    // Set cursor position after the inserted "- "
+                    this.setSelectionRange(cursorPosition + 3, cursorPosition + 3);
+                }
+            }
+        });
+        
+        // Prefill notes with template if empty when loading
+        document.addEventListener('DOMContentLoaded', function() {
+            const notesField = document.getElementById('notes');
+            if (!notesField.value.trim()) {
+                notesField.value = "Job Notes:\n- \n\nMaterials:\n- ";
+            }
+            
+            // Adjust textarea height to fill viewport
+            function adjustTextareaHeight() {
+                const viewportHeight = window.innerHeight;
+                const headerHeight = document.querySelector('header').offsetHeight;
+                const formHeadingHeight = document.querySelector('h2').offsetHeight;
+                const formGroupsHeight = Array.from(document.querySelectorAll('.form-group:not(:last-child)'))
+                    .reduce((total, el) => total + el.offsetHeight, 0);
+                const buttonRowHeight = document.querySelector('.button-row').offsetHeight;
+                const margins = 32; // Approximate margins/padding
+                
+                const availableHeight = viewportHeight - headerHeight - formHeadingHeight - formGroupsHeight - buttonRowHeight - margins;
+                notesField.style.height = Math.max(200, availableHeight) + 'px';
+            }
+            
+            // Initial adjustment
+            adjustTextareaHeight();
+            
+            // Adjust on window resize
+            window.addEventListener('resize', adjustTextareaHeight);
+        });
+    </script>
 </body>
 </html>
