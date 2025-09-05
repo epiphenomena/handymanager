@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const endDate = endDateInput.value;
         const endTime = endTimeInput.value;
         const location = locationInput.value.trim(); // Trim whitespace
-        const notes = notesInput.value.trim(); // Trim whitespace
+        const notes = notesInput.value; // Don't trim whitespace to preserve formatting
         
         if (!startDate || !startTime || !location) {
             alert('Please fill in all required fields');
@@ -118,7 +118,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 locationInput.value = job.location;
-                notesInput.value = job.notes || '';
+                // Prefill notes with template if empty
+                if (job.notes) {
+                    notesInput.value = job.notes;
+                } else {
+                    notesInput.value = "Job Notes:\n- \n\nMaterials:\n- ";
+                }
             } else {
                 alert('Error loading job: ' + data.message);
             }
