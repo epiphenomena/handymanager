@@ -117,13 +117,16 @@ Materials:
             // Adjust on window resize
             window.addEventListener('resize', adjustTextareaHeight);
 
-            // Scroll textarea into view when focused on mobile
+            // Scroll submit button into view when focused on mobile
             notesField.addEventListener('focusin', () => {
-                // Use scrollIntoView() to bring the textarea into view
-                notesField.scrollIntoView({
-                    behavior: 'smooth', // This makes the scroll animation smooth
-                    block: 'start' // This aligns the element to the top of the viewport
-                });
+                // Add a delay to allow the keyboard to fully open
+                setTimeout(() => {
+                    // Use scrollIntoView() to bring the submit button into view
+                    document.querySelector('.submit-btn').scrollIntoView({
+                        behavior: 'smooth', // This makes the scroll animation smooth
+                        block: 'start' // This aligns the element to the top of the viewport
+                    });
+                }, 500); // 500ms delay
             });
         });
     </script>
