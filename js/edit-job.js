@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (job.notes) {
                     notesInput.value = job.notes;
                 } else {
-                    notesInput.value = "Job Notes:\n- \n\nMaterials:\n- ";
+                    notesInput.value = "Notes:\n- \n\nMaterials:\n- ";
                 }
             } else {
                 alert('Error loading job: ' + data.message);

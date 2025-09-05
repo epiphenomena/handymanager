@@ -57,7 +57,7 @@
                 </div>
                 <div class="form-group">
                     <label for="notes">Notes:</label>
-                    <textarea id="notes" placeholder="Job Notes:
+                    <textarea id="notes" placeholder="Notes:
 - 
 
 Materials:
@@ -98,7 +98,7 @@ Materials:
         document.addEventListener('DOMContentLoaded', function() {
             const notesField = document.getElementById('notes');
             if (!notesField.value.trim()) {
-                notesField.value = "Job Notes:\n- \n\nMaterials:\n- ";
+                notesField.value = "Notes:\n- \n\nMaterials:\n- ";
             }
             
             // Adjust textarea height to fill viewport
