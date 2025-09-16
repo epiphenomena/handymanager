@@ -238,14 +238,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             mainContent.style.display = 'block';
         }
 
-        // Format date without seconds and year
+        // Format date without seconds and year in 12-hour format
         function formatDateWithoutSecondsOrYear(date) {
-            // Format: MM/DD HH:MM (24-hour format)
+            // Format: MM/DD h:MM AM/PM (12-hour format)
             const month = String(date.getMonth() + 1).padStart(2, '0');
             const day = String(date.getDate()).padStart(2, '0');
-            const hours = String(date.getHours()).padStart(2, '0');
+            let hours = date.getHours();
             const minutes = String(date.getMinutes()).padStart(2, '0');
-            return `${month}/${day} ${hours}:${minutes}`;
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12; // Convert 0 to 12
+            return `${month}/${day} ${hours}:${minutes} ${ampm}`;
         }
 
         // Show settings button event
