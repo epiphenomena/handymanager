@@ -110,6 +110,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             top: 20px;
             right: 20px;
         }
+        /* Widen the start and end date/time columns to fit "09/11 7:40 AM" format */
+        #jobsTable th:nth-child(1),
+        #jobsTable th:nth-child(2),
+        #jobsTable td:nth-child(1),
+        #jobsTable td:nth-child(2) {
+            width: 14ch;
+            min-width: 14ch;
+        }
+        
+        /* Set minimum width for location column */
+        #jobsTable th:nth-child(5),
+        #jobsTable td:nth-child(5) {
+            min-width: 35ch;
+        }
     </style>
 </head>
 <body>
