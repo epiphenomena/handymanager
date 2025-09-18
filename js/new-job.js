@@ -3,7 +3,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     const newJobForm = document.getElementById('new-job-form');
     const locationInput = document.getElementById('location');
-    const locationOptions = document.getElementById('location-options');
+    const locationSuggestions = document.getElementById('location-suggestions');
     
     // Prefill start date and time with current date and time
     const now = new Date();
@@ -15,6 +15,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     document.getElementById('start-date').value = `${year}-${month}-${day}`;
     document.getElementById('start-time').value = `${hours}:${minutes}`;
+    
+    // Store locations for autocomplete
+    let allLocations = [];
     
     // Fetch and populate location options
     const token = localStorage.getItem('handymanager_token');
@@ -34,21 +37,103 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success && data.locations) {
-                // Clear existing options
-                locationOptions.innerHTML = '';
-                
-                // Add new options
-                data.locations.forEach(location => {
-                    const option = document.createElement('option');
-                    option.value = location;
-                    locationOptions.appendChild(option);
-                });
+                allLocations = data.locations;
             }
         })
         .catch(error => {
             console.error('Error fetching locations:', error);
         });
     }
+    
+    // Autocomplete functionality
+    let selectedIndex = -1;
+    
+    // Filter locations based on input
+    function filterLocations(query) {
+        if (!query) return [];
+        return allLocations.filter(location => 
+            location.toLowerCase().includes(query.toLowerCase())
+        );
+    }
+    
+    // Show suggestions
+    function showSuggestions(suggestions) {
+        locationSuggestions.innerHTML = '';
+        
+        if (suggestions.length === 0) {
+            locationSuggestions.style.display = 'none';
+            return;
+        }
+        
+        suggestions.forEach((suggestion, index) => {
+            const suggestionElement = document.createElement('div');
+            suggestionElement.className = 'autocomplete-suggestion';
+            suggestionElement.textContent = suggestion;
+            suggestionElement.addEventListener('click', () => {
+                locationInput.value = suggestion;
+                locationSuggestions.style.display = 'none';
+                selectedIndex = -1;
+            });
+            locationSuggestions.appendChild(suggestionElement);
+        });
+        
+        locationSuggestions.style.display = 'block';
+        selectedIndex = -1;
+    }
+    
+    // Handle keyboard navigation
+    function handleKeyNavigation(e) {
+        const suggestions = locationSuggestions.querySelectorAll('.autocomplete-suggestion');
+        
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, suggestions.length - 1);
+                updateSelection(suggestions);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                updateSelection(suggestions);
+                break;
+            case 'Enter':
+                if (selectedIndex >= 0 && suggestions.length > 0) {
+                    e.preventDefault();
+                    locationInput.value = suggestions[selectedIndex].textContent;
+                    locationSuggestions.style.display = 'none';
+                    selectedIndex = -1;
+                }
+                break;
+            case 'Escape':
+                locationSuggestions.style.display = 'none';
+                selectedIndex = -1;
+                break;
+        }
+    }
+    
+    // Update selected item styling
+    function updateSelection(suggestions) {
+        suggestions.forEach((suggestion, index) => {
+            suggestion.classList.toggle('selected', index === selectedIndex);
+        });
+    }
+    
+    // Event listeners for autocomplete
+    locationInput.addEventListener('input', function() {
+        const query = this.value;
+        const suggestions = filterLocations(query);
+        showSuggestions(suggestions);
+    });
+    
+    locationInput.addEventListener('keydown', handleKeyNavigation);
+    
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', function(e) {
+        if (e.target !== locationInput && !locationSuggestions.contains(e.target)) {
+            locationSuggestions.style.display = 'none';
+            selectedIndex = -1;
+        }
+    });
     
     // Handle form submission
     newJobForm.addEventListener('submit', function(e) {
