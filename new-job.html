@@ -11,7 +11,7 @@
         .autocomplete-wrapper {
             position: relative;
         }
-        
+
         .autocomplete-suggestions {
             position: absolute;
             top: 100%;
@@ -25,12 +25,12 @@
             border-top: none;
             display: none;
         }
-        
+
         .autocomplete-suggestion {
             padding: 10px;
             cursor: pointer;
         }
-        
+
         .autocomplete-suggestion:hover,
         .autocomplete-suggestion.selected {
             background-color: #f0f0f0;
@@ -46,6 +46,13 @@
             <h2>New Job</h2>
             <form id="new-job-form">
                 <div class="form-group">
+                    <label for="location">Location:</label>
+                    <div class="autocomplete-wrapper">
+                        <input type="text" id="location" required>
+                        <div id="location-suggestions" class="autocomplete-suggestions"></div>
+                    </div>
+                </div>
+                <div class="form-group">
                     <label for="start-date">Start Date:</label>
                     <input type="date" id="start-date" required>
                 </div>
@@ -53,19 +60,12 @@
                     <label for="start-time">Start Time:</label>
                     <input type="time" id="start-time" required>
                 </div>
-                <div class="form-group">
-                    <label for="location">Location:</label>
-                    <div class="autocomplete-wrapper">
-                        <input type="text" id="location" required>
-                        <div id="location-suggestions" class="autocomplete-suggestions"></div>
-                    </div>
-                </div>
                 <button type="submit" class="primary-btn">Start Job</button>
             </form>
             <button class="cancel-btn" onclick="window.location.href='./'">Cancel</button>
         </main>
     </div>
-    
+
     <script src="js/new-job.js"></script>
 </body>
 </html>
