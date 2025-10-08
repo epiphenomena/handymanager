@@ -60,7 +60,12 @@ function getLatestJobs($techName, $limit = 20) {
         SELECT id, start_time, end_time, location, notes
         FROM jobs
         WHERE tech_name = :tech_name
-        ORDER BY COALESCE(closed_at, start_time) DESC
+        ORDER BY
+        CASE WHEN end_time IS NULL THEN 0 ELSE 1 END,  -- Jobs without end_time first
+            CASE
+                WHEN end_time IS NULL THEN start_time  -- Sort jobs without end_time by start_time
+                ELSE end_time  -- Sort jobs with end_time by end_time
+            END DESC
         LIMIT :limit
     ");
 
@@ -107,27 +112,27 @@ function updateJob($jobId, $startTime, $endTime, $location, $notes) {
 // Function to partially update a job (only specific fields)
 function updateJobPartial($jobId, $location = null, $notes = null) {
     $pdo = getDbConnection();
-    
+
     $setClauses = [];
     $params = ['job_id' => $jobId];
-    
+
     if ($location !== null) {
         $setClauses[] = "location = :location";
         $params['location'] = trim($location);
     }
-    
+
     if ($notes !== null) {
         $setClauses[] = "notes = :notes";
         $params['notes'] = $notes;
     }
-    
+
     if (empty($setClauses)) {
         return false; // Nothing to update
     }
-    
+
     $sql = "UPDATE jobs SET " . implode(", ", $setClauses) . " WHERE id = :job_id";
     $stmt = $pdo->prepare($sql);
-    
+
     return $stmt->execute($params);
 }
 
@@ -213,7 +218,7 @@ function getAllJobs($filters = []) {
         }
     }
 
-    // Sort by: 
+    // Sort by:
     // 1. Jobs without end_time at the top
     // 2. Then jobs with end_time, newest first
     // 3. For jobs without end_time, sort by start_time, newest first
@@ -223,7 +228,7 @@ function getAllJobs($filters = []) {
         $whereClause
         ORDER BY
             CASE WHEN end_time IS NULL THEN 0 ELSE 1 END,  -- Jobs without end_time first
-            CASE 
+            CASE
                 WHEN end_time IS NULL THEN start_time  -- Sort jobs without end_time by start_time
                 ELSE end_time  -- Sort jobs with end_time by end_time
             END DESC
