@@ -174,9 +174,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </div>
                                 <div class="col-md-3 mb-3">
                                     <label for="locationFilter" class="form-label">Location</label>
-                                    <select class="form-select" id="locationFilter">
-                                        <option value="">All Locations</option>
+                                    <select class="form-select" id="locationFilter" multiple>
+                                        <option value="" selected>All Locations</option>
                                     </select>
+                                    <div class="form-text">Hold Ctrl/Cmd to select multiple locations</div>
                                 </div>
                             </div>
                             <div class="row">
@@ -415,13 +416,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (jobs.length === 0) {
                 const row = document.createElement('tr');
-                row.innerHTML = '<td colspan="6" class="text-center">No jobs found</td>';
+                row.innerHTML = '<td colspan="7" class="text-center">No jobs found</td>';
                 jobsTableBody.appendChild(row);
                 return;
             }
 
             jobs.forEach(job => {
                 const row = document.createElement('tr');
+                row.setAttribute('data-job-id', job.id);
 
                 // Format dates without seconds and years
                 const startDate = job.start_time ? formatDateWithoutSecondsOrYear(new Date(job.start_time)) : '';
@@ -442,8 +444,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <td>${endDate}</td>
                     <td>${duration}</td>
                     <td>${job.tech_name || ''}</td>
-                    <td>${job.location || ''}</td>
-                    <td>${job.notes || ''}</td>
+                    <td class="editable-cell" data-field="location">${job.location || ''}</td>
+                    <td class="editable-cell" data-field="notes">${job.notes || ''}</td>
                     <td><button class="btn btn-secondary delete-btn" data-job-id="${job.id}">Delete?</button></td>
                 `;
 
@@ -465,6 +467,104 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 });
             });
+            
+            // Add event listeners for editable cells
+            document.querySelectorAll('.editable-cell').forEach(cell => {
+                cell.addEventListener('click', function() {
+                    if (this.querySelector('input')) {
+                        return; // Already in edit mode
+                    }
+                    
+                    const currentValue = this.textContent;
+                    const field = this.getAttribute('data-field');
+                    const jobId = this.closest('tr').getAttribute('data-job-id');
+                    
+                    // Create input element
+                    const input = document.createElement('input');
+                    input.type = field === 'notes' ? 'text' : 'text';
+                    input.className = 'form-control form-control-sm';
+                    input.value = currentValue;
+                    
+                    // Replace cell content with input
+                    this.innerHTML = '';
+                    this.appendChild(input);
+                    input.focus();
+                    
+                    // Change the delete button to save button for this row
+                    const row = this.closest('tr');
+                    const deleteBtn = row.querySelector('.delete-btn');
+                    deleteBtn.classList.remove('btn-secondary', 'btn-danger');
+                    deleteBtn.classList.add('btn-success');
+                    deleteBtn.textContent = 'Save Changes';
+                    deleteBtn.onclick = function() {
+                        saveCellChanges(jobId, field, input.value, row);
+                    };
+                });
+            });
+        }
+
+        // Save changes to a cell
+        async function saveCellChanges(jobId, field, value, row) {
+            const token = localStorage.getItem('handymanager_admin_token');
+            if (!token) {
+                alert('Admin token not found. Please re-authenticate.');
+                showSettingsSection();
+                return;
+            }
+
+            try {
+                // Prepare update request to update job
+                const updatePayload = {
+                    token: token,
+                    job_id: jobId
+                };
+                
+                // Only include the field that was modified
+                if (field === 'location') {
+                    updatePayload.location = value;
+                } else if (field === 'notes') {
+                    updatePayload.notes = value;
+                }
+                
+                const updateResponse = await fetch('update-job.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(updatePayload)
+                });
+
+                const updateData = await updateResponse.json();
+
+                if (updateData.success) {
+                    // Get the cell that was edited
+                    const cell = row.querySelector('.editable-cell[data-field="' + field + '"]');
+                    cell.innerHTML = value;
+                    
+                    // Change save button back to delete button
+                    const saveBtn = row.querySelector('.delete-btn');
+                    saveBtn.classList.remove('btn-success');
+                    saveBtn.classList.add('btn-secondary');
+                    saveBtn.textContent = 'Delete?';
+                    saveBtn.onclick = function() {
+                        const jobId = this.getAttribute('data-job-id');
+                        if (this.classList.contains('btn-secondary')) {
+                            // First click: change to red "DELETE!" button
+                            this.classList.remove('btn-secondary');
+                            this.classList.add('btn-danger');
+                            this.textContent = 'DELETE!';
+                        } else {
+                            // Second click: delete the job
+                            deleteJob(jobId);
+                        }
+                    };
+                } else {
+                    alert('Error saving changes: ' + updateData.message);
+                }
+            } catch (error) {
+                console.error('Error saving cell changes:', error);
+                alert('Error saving changes');
+            }
         }
 
         // Delete job function
@@ -524,8 +624,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 filters.tech = techFilter.value;
             }
 
-            if (locationFilter.value) {
-                filters.location = locationFilter.value;
+            // Handle multiple location selections
+            const selectedLocations = Array.from(locationFilter.selectedOptions)
+                .map(option => option.value)
+                .filter(value => value !== ""); // Exclude the empty "All Locations" option
+
+            if (selectedLocations.length > 0) {
+                filters.location = selectedLocations;
             }
 
             loadJobs(filters);
@@ -542,7 +647,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             dateFromInput.value = '';
             dateToInput.value = '';
             techFilter.value = '';
-            locationFilter.value = '';
+            // Deselect all location options except the first one (All Locations)
+            Array.from(locationFilter.options).forEach((option, index) => {
+                if (index !== 0) {
+                    option.selected = false;
+                }
+            });
+            locationFilter.options[0].selected = true;
             loadJobs();
         });
 
@@ -562,8 +673,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 filters.tech = techFilter.value;
             }
 
-            if (locationFilter.value) {
-                filters.location = locationFilter.value;
+            // Handle multiple location selections for export
+            const selectedLocations = Array.from(locationFilter.selectedOptions)
+                .map(option => option.value)
+                .filter(value => value !== ""); // Exclude the empty "All Locations" option
+
+            if (selectedLocations.length > 0) {
+                filters.location = selectedLocations;
             }
 
             const token = localStorage.getItem('handymanager_admin_token');

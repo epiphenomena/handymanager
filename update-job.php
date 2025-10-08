@@ -1,11 +1,11 @@
 <?php
-// update-job.php - Update a job
+// update-job.php - Endpoint to update job details (location and notes)
 
 require_once 'config.php';
 
 // Enable CORS for local development
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 
 // Handle preflight requests
@@ -13,38 +13,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit(0);
 }
 
-// Only allow POST requests
+// Only accept POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    sendJsonResponse(['success' => false, 'message' => 'Only POST requests allowed']);
+    http_response_code(405);
+    sendJsonResponse(['success' => false, 'message' => 'Method not allowed']);
 }
 
 // Get JSON input
 $input = json_decode(file_get_contents('php://input'), true);
 
-// Validate input
-if (!isset($input['token']) || !isset($input['job_id']) || !isset($input['start_time']) || 
-    !isset($input['location'])) {
-    sendJsonResponse(['success' => false, 'message' => 'Missing required fields']);
+// Validate admin token
+if (!isset($input['token']) || !verifyAdminToken($input['token'])) {
+    sendJsonResponse(['success' => false, 'message' => 'Invalid admin token']);
 }
 
-$token = $input['token'];
+// Validate required parameters
+if (!isset($input['job_id'])) {
+    sendJsonResponse(['success' => false, 'message' => 'Job ID is required']);
+}
+
 $jobId = $input['job_id'];
-$startTime = $input['start_time'];
-$endTime = $input['end_time'] ?? null;
-$location = $input['location'];
+$location = $input['location'] ?? null;
 $notes = $input['notes'] ?? null;
 
-// Verify token
-if (!verifyToken($token)) {
-    sendJsonResponse(['success' => false, 'message' => 'Invalid token']);
+// At least one field must be provided for update
+if ($location === null && $notes === null) {
+    sendJsonResponse(['success' => false, 'message' => 'At least one field (location or notes) must be provided for update']);
 }
 
-// Update job in database
-$result = updateJob($jobId, $startTime, $endTime, $location, $notes);
-
-if ($result) {
-    sendJsonResponse(['success' => true, 'message' => 'Job updated successfully']);
-} else {
-    sendJsonResponse(['success' => false, 'message' => 'Failed to update job']);
+// Update the job in database
+try {
+    $result = updateJobPartial($jobId, $location, $notes);
+    
+    if ($result) {
+        sendJsonResponse(['success' => true, 'message' => 'Job updated successfully']);
+    } else {
+        sendJsonResponse(['success' => false, 'message' => 'Failed to update job']);
+    }
+} catch (Exception $e) {
+    sendJsonResponse(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
 }
-?>
