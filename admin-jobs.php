@@ -410,6 +410,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        // Track if a cell is currently being edited
+        let currentlyEditingCell = null;
+
         // Render jobs in the table
         function renderJobsTable(jobs) {
             jobsTableBody.innerHTML = '';
@@ -455,6 +458,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Add event listeners for delete buttons
             document.querySelectorAll('.delete-btn').forEach(button => {
                 button.addEventListener('click', function() {
+                    // Don't allow deletion if a cell is currently being edited
+                    if (currentlyEditingCell) {
+                        alert('Please save or cancel changes before deleting a job.');
+                        return;
+                    }
+                    
                     const jobId = this.getAttribute('data-job-id');
                     if (this.classList.contains('btn-secondary')) {
                         // First click: change to red "DELETE!" button
@@ -471,6 +480,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Add event listeners for editable cells
             document.querySelectorAll('.editable-cell').forEach(cell => {
                 cell.addEventListener('click', function() {
+                    // Don't allow editing if another cell is already being edited
+                    if (currentlyEditingCell && currentlyEditingCell !== this) {
+                        return;
+                    }
+                    
                     if (this.querySelector('input')) {
                         return; // Already in edit mode
                     }
@@ -479,26 +493,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const field = this.getAttribute('data-field');
                     const jobId = this.closest('tr').getAttribute('data-job-id');
                     
+                    // Mark that we're currently editing this cell
+                    currentlyEditingCell = this;
+                    
                     // Create input element
                     const input = document.createElement('input');
                     input.type = field === 'notes' ? 'text' : 'text';
                     input.className = 'form-control form-control-sm';
                     input.value = currentValue;
+                    input.setAttribute('data-original-value', currentValue); // Store original value
                     
                     // Replace cell content with input
                     this.innerHTML = '';
                     this.appendChild(input);
                     input.focus();
                     
-                    // Change the delete button to save button for this row
+                    // Change the delete button to save/cancel buttons for this row
                     const row = this.closest('tr');
-                    const deleteBtn = row.querySelector('.delete-btn');
-                    deleteBtn.classList.remove('btn-secondary', 'btn-danger');
-                    deleteBtn.classList.add('btn-success');
-                    deleteBtn.textContent = 'Save Changes';
-                    deleteBtn.onclick = function() {
+                    const buttonCell = row.querySelector('td:last-child');
+                    buttonCell.innerHTML = '';
+                    
+                    const saveBtn = document.createElement('button');
+                    saveBtn.className = 'btn btn-success save-btn me-1';
+                    saveBtn.innerHTML = '✓'; // UTF-8 checkmark
+                    saveBtn.disabled = true; // Initially disabled until changes are made
+                    saveBtn.title = 'Save Changes';
+                    
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.className = 'btn btn-secondary cancel-btn';
+                    cancelBtn.innerHTML = '✕'; // UTF-8 multiplication sign (X)
+                    cancelBtn.title = 'Cancel Changes';
+                    
+                    buttonCell.appendChild(saveBtn);
+                    buttonCell.appendChild(cancelBtn);
+                    
+                    // Add listeners to the buttons
+                    saveBtn.onclick = function() {
                         saveCellChanges(jobId, field, input.value, row);
                     };
+                    
+                    cancelBtn.onclick = function() {
+                        cancelCellEditing(this, row, field, currentValue);
+                    };
+                    
+                    // Add input listener to enable save button when value changes
+                    input.addEventListener('input', function() {
+                        const originalValue = this.getAttribute('data-original-value');
+                        saveBtn.disabled = (this.value === originalValue);
+                    });
+                    
+                    // Add blur listener to revert if no changes made
+                    input.addEventListener('blur', function() {
+                        setTimeout(() => {
+                            // Only revert if the input still exists (not removed by save) and no changes were made
+                            if (input.parentNode && input.value === input.getAttribute('data-original-value')) {
+                                // Don't revert if the save button was clicked (which also causes blur)
+                                if (!saveBtn.classList.contains('clicked')) {
+                                    cancelCellEditing(cancelBtn, row, field, currentValue);
+                                }
+                            }
+                        }, 150); // Small delay to allow click event to register
+                    });
+                    
+                    // Add keydown listener for Enter and Escape
+                    input.addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter') {
+                            if (!saveBtn.disabled) {
+                                saveBtn.click();
+                            }
+                        } else if (e.key === 'Escape') {
+                            cancelCellEditing(cancelBtn, row, field, currentValue);
+                        }
+                    });
                 });
             });
         }
@@ -539,14 +605,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (updateData.success) {
                     // Get the cell that was edited
                     const cell = row.querySelector('.editable-cell[data-field="' + field + '"]');
+                    
+                    // Update the cell value
                     cell.innerHTML = value;
                     
-                    // Change save button back to delete button
-                    const saveBtn = row.querySelector('.delete-btn');
-                    saveBtn.classList.remove('btn-success');
-                    saveBtn.classList.add('btn-secondary');
-                    saveBtn.textContent = 'Delete?';
-                    saveBtn.onclick = function() {
+                    // Change buttons back to delete button
+                    const buttonCell = row.querySelector('td:last-child');
+                    buttonCell.innerHTML = '<button class="btn btn-secondary delete-btn" data-job-id="' + jobId + '">Delete?</button>';
+                    
+                    // Add event listener to the new delete button
+                    const deleteBtn = buttonCell.querySelector('.delete-btn');
+                    deleteBtn.addEventListener('click', function() {
                         const jobId = this.getAttribute('data-job-id');
                         if (this.classList.contains('btn-secondary')) {
                             // First click: change to red "DELETE!" button
@@ -557,7 +626,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             // Second click: delete the job
                             deleteJob(jobId);
                         }
-                    };
+                    });
+                    
+                    // Clear the currently editing flag
+                    currentlyEditingCell = null;
                 } else {
                     alert('Error saving changes: ' + updateData.message);
                 }
@@ -565,6 +637,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 console.error('Error saving cell changes:', error);
                 alert('Error saving changes');
             }
+        }
+
+        // Cancel editing and revert to original state
+        function cancelCellEditing(cancelBtn, row, field, originalValue) {
+            const cell = row.querySelector('.editable-cell[data-field="' + field + '"]');
+            
+            // Revert the cell to its original content
+            cell.innerHTML = originalValue;
+            
+            // Change buttons back to delete button
+            const jobId = row.getAttribute('data-job-id');
+            const buttonCell = row.querySelector('td:last-child');
+            buttonCell.innerHTML = '<button class="btn btn-secondary delete-btn" data-job-id="' + jobId + '">Delete?</button>';
+            
+            // Add event listener to the new delete button
+            const deleteBtn = buttonCell.querySelector('.delete-btn');
+            deleteBtn.addEventListener('click', function() {
+                const jobId = this.getAttribute('data-job-id');
+                if (this.classList.contains('btn-secondary')) {
+                    // First click: change to red "DELETE!" button
+                    this.classList.remove('btn-secondary');
+                    this.classList.add('btn-danger');
+                    this.textContent = 'DELETE!';
+                } else {
+                    // Second click: delete the job
+                    deleteJob(jobId);
+                }
+            });
+            
+            // Clear the currently editing flag
+            currentlyEditingCell = null;
         }
 
         // Delete job function
@@ -644,6 +747,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Clear filters
         clearFiltersBtn.addEventListener('click', function() {
+            // Don't allow clearing filters if a cell is currently being edited
+            if (currentlyEditingCell) {
+                alert('Please save or cancel changes before clearing filters.');
+                return;
+            }
+            
             dateFromInput.value = '';
             dateToInput.value = '';
             techFilter.value = '';
@@ -659,6 +768,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Export to CSV
         exportCsvBtn.addEventListener('click', async function() {
+            // Don't allow export if a cell is currently being edited
+            if (currentlyEditingCell) {
+                alert('Please save or cancel changes before exporting.');
+                return;
+            }
+            
             const filters = {};
 
             if (dateFromInput.value) {
