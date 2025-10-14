@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $jobId = $input['job_id'];
-        
+
         // Delete the job from database
         if (deleteJob($jobId)) {
             sendJsonResponse(['success' => true, 'message' => 'Job deleted successfully']);
@@ -110,19 +110,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             top: 20px;
             right: 20px;
         }
-        /* Widen the start and end date/time columns to fit "09/11 7:40 AM" format */
+        /* Set widths for date/time columns */
         #jobsTable th:nth-child(1),
-        #jobsTable th:nth-child(2),
-        #jobsTable td:nth-child(1),
-        #jobsTable td:nth-child(2) {
-            width: 14ch;
-            min-width: 14ch;
+        #jobsTable td:nth-child(1) {
+            width: 10ch;
+            min-width: 10ch;
         }
-        
+
+        #jobsTable th:nth-child(2),
+        #jobsTable td:nth-child(2) {
+            width: 8ch;
+            min-width: 8ch;
+        }
+
+        #jobsTable th:nth-child(3),
+        #jobsTable td:nth-child(3) {
+            width: 10ch;
+            min-width: 10ch;
+        }
+
+        #jobsTable th:nth-child(4),
+        #jobsTable td:nth-child(4) {
+            width: 8ch;
+            min-width: 8ch;
+        }
+
         /* Set minimum width for location column */
-        #jobsTable th:nth-child(5),
-        #jobsTable td:nth-child(5) {
+        #jobsTable th:nth-child(7),
+        #jobsTable td:nth-child(7) {
             min-width: 35ch;
+        }
+
+        /* Make textareas fill the cell vertically */
+        #jobsTable textarea {
+            height: calc(100% - 8px);
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        /* Make inputs fill the cell vertically when in edit mode */
+        #jobsTable .editing-row input,
+        #jobsTable .editing-row textarea {
+            height: calc(100% - 8px);
+        }
+
+        /* Ensure adequate spacing for buttons */
+        .button-cell {
+            min-width: 180px;
+            white-space: nowrap;
+        }
+
+        /* Style for buttons in edit mode */
+        .btn-group-edit {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        /* Expanded row height in edit mode */
+        .editing-row {
+            height: 300px !important;
+        }
+
+        .editing-row td {
+            height: 300px !important;
+            vertical-align: top;
         }
     </style>
 </head>
@@ -193,13 +244,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <table class="table table-striped table-hover" id="jobsTable">
                             <thead class="table-dark">
                                 <tr>
-                                    <th>Start Date/Time</th>
-                                    <th>End Date/Time</th>
+                                    <th>Start Date</th>
+                                    <th>Start Time</th>
+                                    <th>End Date</th>
+                                    <th>End Time</th>
                                     <th>Duration (Hours)</th>
                                     <th>Tech Name</th>
                                     <th>Location</th>
                                     <th>Notes</th>
-                                    <th>Delete</th>
+                                    <th>Edit</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -413,6 +466,402 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Track if a cell is currently being edited
         let currentlyEditingCell = null;
 
+        // Enter edit mode for a row
+        function enterEditMode(row, jobId) {
+            // Prevent editing if another row is currently being edited
+            if (currentlyEditingCell) {
+                alert('Please save or cancel changes before editing another row.');
+                return;
+            }
+
+            // Mark that we're currently editing this row
+            currentlyEditingCell = row;
+
+            // Add class to expand row height
+            row.classList.add('editing-row');
+
+            // Get all editable cells in the row and make them editable
+            const editableCells = row.querySelectorAll('.editable-cell');
+            const originalValues = {};
+
+            editableCells.forEach(cell => {
+                const field = cell.getAttribute('data-field');
+                const currentValue = cell.textContent;
+
+                originalValues[field] = currentValue;
+
+                let input;
+                if (field === 'notes') {
+                    // Create textarea for notes field
+                    input = document.createElement('textarea');
+                    input.className = 'form-control form-control-sm';
+                    input.style.height = '100%';
+                    input.style.resize = 'vertical';
+                    input.value = currentValue;
+                } else if (field === 'start_date' || field === 'end_date') {
+                    // Create date input for date fields
+                    input = document.createElement('input');
+                    input.type = 'date';
+                    input.className = 'form-control form-control-sm';
+                    // Convert the displayed date to YYYY-MM-DD format for the date input
+                    if (currentValue) {
+                        const date = new Date(currentValue);
+                        if (!isNaN(date.getTime())) {
+                            input.value = date.toISOString().split('T')[0];
+                        } else {
+                            // If it's already in YYYY-MM-DD format, use as is
+                            input.value = currentValue;
+                        }
+                    }
+                } else if (field === 'start_time' || field === 'end_time') {
+                    // Create time input for time fields
+                    input = document.createElement('input');
+                    input.type = 'time';
+                    input.className = 'form-control form-control-sm';
+
+                    // The currentValue is in 12-hour format (e.g. "2:30 PM"), convert to 24-hour for the input
+                    if (currentValue) {
+                        input.value = convert12HourTo24Hour(currentValue);
+                    }
+                } else {
+                    // Create input element for other fields
+                    input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'form-control form-control-sm';
+                    input.value = currentValue;
+                }
+
+                input.setAttribute('data-original-value', currentValue); // Store original value
+
+                // Replace cell content with input
+                cell.innerHTML = '';
+                cell.appendChild(input);
+            });
+
+            // Store original values on the row element
+            row.setAttribute('data-original-values', JSON.stringify(originalValues));
+
+            // Change the edit button to save, cancel, and delete buttons
+            const buttonCell = row.querySelector('td:last-child');
+            buttonCell.className = 'button-cell';
+            buttonCell.innerHTML = '';
+
+            const buttonGroup = document.createElement('div');
+            buttonGroup.className = 'btn-group-edit';
+
+            const saveBtn = document.createElement('button');
+            saveBtn.className = 'btn btn-success save-btn';
+            saveBtn.innerHTML = 'Save';
+            saveBtn.title = 'Save Changes';
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'btn btn-secondary cancel-btn';
+            cancelBtn.innerHTML = 'Cancel';
+            cancelBtn.title = 'Cancel Changes';
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-danger delete-btn';
+            deleteBtn.innerHTML = 'Delete?';
+            deleteBtn.title = 'Delete Job (double-click to confirm)';
+
+            buttonGroup.appendChild(saveBtn);
+            buttonGroup.appendChild(cancelBtn);
+            buttonGroup.appendChild(deleteBtn);
+            buttonCell.appendChild(buttonGroup);
+
+            // No change detection - save button is always enabled
+
+            // Add listeners to the buttons
+            saveBtn.onclick = function() {
+                saveRowChanges(row, jobId);
+            };
+
+            cancelBtn.onclick = function() {
+                cancelRowEditing(row);
+            };
+
+            deleteBtn.addEventListener('click', function() {
+                if (this.classList.contains('btn-danger') && !this.classList.contains('confirm-delete')) {
+                    // First click: change to "DELETE!" button
+                    this.classList.remove('btn-danger');
+                    this.classList.add('btn-warning', 'confirm-delete');
+                    this.textContent = 'DELETE!';
+                    this.title = 'Confirm Delete';
+                } else if (this.classList.contains('confirm-delete')) {
+                    // Second click: delete the job
+                    deleteJob(jobId);
+                }
+            });
+        }
+
+        // Function to convert separate date and time values to ISO format
+        function convertToISOString(dateStr, timeStr) {
+            if (!dateStr) return null;
+
+            // If we have time, combine date and time; otherwise just use date
+            let isoString = dateStr;
+            if (timeStr) {
+                isoString += `T${timeStr}:00`;
+            } else {
+                isoString += "T00:00:00";
+            }
+
+            return isoString;
+        }
+
+        // Function to convert 12-hour time format to 24-hour format
+        function convert12HourTo24Hour(time12h) {
+            if (!time12h) return '';
+
+            const [time, modifier] = time12h.split(' ');
+            let [hours, minutes] = time.split(':');
+
+            hours = parseInt(hours, 10);
+
+            if (modifier === 'AM') {
+                if (hours === 12) {
+                    hours = 0;  // 12:XX AM is midnight, so 00:XX in 24-hour format
+                }
+            } else if (modifier === 'PM') {
+                if (hours !== 12) {
+                    hours += 12; // 1:XX PM to 11:XX PM becomes 13:XX to 23:XX
+                }
+                // 12:XX PM stays 12:XX in 24-hour format
+            }
+
+            return `${hours.toString().padStart(2, '0')}:${minutes}`;
+        }
+
+        // Save changes to the entire row
+        async function saveRowChanges(row, jobId) {
+            const token = localStorage.getItem('handymanager_admin_token');
+            if (!token) {
+                alert('Admin token not found. Please re-authenticate.');
+                showSettingsSection();
+                return;
+            }
+
+            try {
+                // Prepare update request to update job
+                const updatePayload = {
+                    token: token,
+                    job_id: jobId
+                };
+
+                // Process date and time fields to combine them properly
+                const start_date_input = row.querySelector('td[data-field="start_date"] input');
+                const start_time_input = row.querySelector('td[data-field="start_time"] input');
+                const end_date_input = row.querySelector('td[data-field="end_date"] input');
+                const end_time_input = row.querySelector('td[data-field="end_time"] input');
+                console.log(start_date_input, start_time_input, end_date_input, end_time_input)
+
+                // Handle start time changes
+                if (start_date_input && start_time_input) {
+                    const start_date_original = start_date_input.getAttribute('data-original-value');
+                    const start_time_original = start_time_input.getAttribute('data-original-value');
+                    const start_date_current = start_date_input.value;
+                    const start_time_current = start_time_input.value;
+
+                    updatePayload['start_time'] = convertToISOString(start_date_current, convert12HourTo24Hour(start_time_current));
+
+                }
+
+                // Handle end time changes
+                if (end_date_input && end_time_input) {
+                    const end_date_original = end_date_input.getAttribute('data-original-value');
+                    const end_time_original = end_time_input.getAttribute('data-original-value');
+                    const end_date_current = end_date_input.value;
+                    const end_time_current = end_time_input.value;
+
+                    updatePayload['end_time'] = convertToISOString(end_date_current, convert12HourTo24Hour(end_time_current));
+                }
+
+                // Process other fields (tech_name, location, notes)
+                const inputs = row.querySelectorAll('input, textarea');
+                inputs.forEach(input => {
+                    const field = input.closest('.editable-cell').getAttribute('data-field');
+                    const originalValue = input.getAttribute('data-original-value');
+
+                    // Process non-date/time fields
+                    if (field !== 'start_date' && field !== 'start_time' &&
+                        field !== 'end_date' && field !== 'end_time') {
+                        if (input.value !== originalValue) {
+                            updatePayload[field] = input.value;
+                        }
+                    }
+                });
+
+                console.log("POSTING: ", updatePayload)
+
+                const updateResponse = await fetch('update-job.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(updatePayload)
+                });
+
+                const updateData = await updateResponse.json();
+
+                if (updateData.success) {
+                    // Update all cells in the row
+                    const inputs = row.querySelectorAll('input, textarea');
+                    inputs.forEach(input => {
+                        const cell = input.closest('.editable-cell');
+                        const field = cell.getAttribute('data-field');
+
+                        if (field === 'start_date' || field === 'end_date') {
+                            // Convert date from YYYY-MM-DD to locale date string
+                            if (input.value) {
+                                const date = new Date(input.value);
+                                cell.textContent = date.toLocaleDateString();
+                            } else {
+                                cell.textContent = '';
+                            }
+                        } else if (field === 'start_time' || field === 'end_time') {
+                            // Format time back to 12-hour display format
+                            const timeValue = input.value;
+                            if (timeValue) {
+                                const [hours, minutes] = timeValue.split(':');
+                                const date = new Date();
+                                date.setHours(parseInt(hours, 10));
+                                date.setMinutes(parseInt(minutes, 10));
+                                // Format as 12-hour time with AM/PM
+                                cell.textContent = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: true});
+                            } else {
+                                cell.textContent = '';
+                            }
+                        } else {
+                            cell.textContent = input.value;
+                        }
+                    });
+
+                    // Calculate and update duration
+                    const startDateInput = row.querySelector('input[data-field="start_date"]');
+                    const startTimeInput = row.querySelector('input[data-field="start_time"]');
+                    const endDateInput = row.querySelector('input[data-field="end_date"]');
+                    const endTimeInput = row.querySelector('input[data-field="end_time"]');
+
+                    if (startDateInput && startTimeInput && endDateInput && endTimeInput) {
+                        const startDateTime = new Date(`${startDateInput.value}T${startTimeInput.value}`);
+                        const endDateTime = new Date(`${endDateInput.value}T${endTimeInput.value}`);
+
+                        if (!isNaN(startDateTime) && !isNaN(endDateTime)) {
+                            const diffMs = endDateTime - startDateTime;
+                            const diffHours = diffMs / (1000 * 60 * 60);
+                            const durationText = diffHours.toFixed(2);
+
+                            // Duration is now in the 5th column (index 4)
+                            const durationCell = row.cells[4];
+                            if (durationCell) {
+                                durationCell.textContent = durationText;
+                            }
+                        }
+                    }
+
+                    // Change buttons back to edit button
+                    const buttonCell = row.querySelector('td:last-child');
+                    buttonCell.innerHTML = '<button class="btn btn-primary edit-btn" data-job-id="' + jobId + '">Edit</button>';
+
+                    // Add event listener to the new edit button
+                    const editBtn = buttonCell.querySelector('.edit-btn');
+                    editBtn.addEventListener('click', function() {
+                        const jobId = this.getAttribute('data-job-id');
+                        const currentRow = this.closest('tr');
+                        enterEditMode(currentRow, jobId);
+                    });
+
+                    // Remove the expanded row class
+                    row.classList.remove('editing-row');
+
+                    // Clear the currently editing flag
+                    currentlyEditingCell = null;
+                } else {
+                    alert('Error saving changes: ' + updateData.message);
+                }
+            } catch (error) {
+                console.error('Error saving row changes:', error);
+                alert('Error saving changes');
+            }
+        }
+
+        // Cancel editing and revert to original state
+        function cancelRowEditing(row) {
+            // Revert all cells in the row to original values
+            const originalValues = JSON.parse(row.getAttribute('data-original-values'));
+            const editableCells = row.querySelectorAll('.editable-cell');
+
+            editableCells.forEach(cell => {
+                const field = cell.getAttribute('data-field');
+
+                if (field === 'start_date' || field === 'end_date') {
+                    // Convert date from YYYY-MM-DD to locale date string
+                    if (originalValues[field]) {
+                        const date = new Date(originalValues[field]);
+                        cell.innerHTML = date.toLocaleDateString();
+                    } else {
+                        cell.innerHTML = '';
+                    }
+                } else if (field === 'start_time' || field === 'end_time') {
+                    // Format time back to 12-hour display format from the original ISO value
+                    const timeValue = originalValues[field];
+                    if (timeValue) {
+                        const date = new Date(timeValue);
+                        if (!isNaN(date.getTime())) {
+                            cell.innerHTML = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: true});
+                        } else {
+                            // If it's already in 12-hour format, use as is
+                            cell.innerHTML = timeValue;
+                        }
+                    } else {
+                        cell.innerHTML = '';
+                    }
+                } else {
+                    cell.innerHTML = originalValues[field];
+                }
+            });
+
+            // Calculate and update duration when canceling
+            if (originalValues['start_date'] && originalValues['start_time'] &&
+                originalValues['end_date'] && originalValues['end_time']) {
+                const startDateTime = new Date(`${originalValues['start_date']}T${originalValues['start_time']}`);
+                const endDateTime = new Date(`${originalValues['end_date']}T${originalValues['end_time']}`);
+
+                if (!isNaN(startDateTime) && !isNaN(endDateTime)) {
+                    const diffMs = endDateTime - startDateTime;
+                    const diffHours = diffMs / (1000 * 60 * 60);
+                    const durationText = diffHours.toFixed(2);
+
+                    // Duration is now in the 5th column (index 4)
+                    const durationCell = row.cells[4];
+                    if (durationCell) {
+                        durationCell.textContent = durationText;
+                    }
+                }
+            }
+
+            // Get job ID
+            const jobId = row.getAttribute('data-job-id');
+
+            // Change buttons back to edit button
+            const buttonCell = row.querySelector('td:last-child');
+            buttonCell.innerHTML = '<button class="btn btn-primary edit-btn" data-job-id="' + jobId + '">Edit</button>';
+
+            // Add event listener to the new edit button
+            const editBtn = buttonCell.querySelector('.edit-btn');
+            editBtn.addEventListener('click', function() {
+                const clickedJobId = this.getAttribute('data-job-id');
+                const currentRow = this.closest('tr');
+                enterEditMode(currentRow, clickedJobId);
+            });
+
+            // Remove the expanded row class
+            row.classList.remove('editing-row');
+
+            // Clear the currently editing flag
+            currentlyEditingCell = null;
+        }
+
         // Render jobs in the table
         function renderJobsTable(jobs) {
             jobsTableBody.innerHTML = '';
@@ -442,233 +891,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     duration = diffHours.toFixed(2);
                 }
 
+                // Format time in 12-hour format for display
+                const formatTime12Hour = (isoString) => {
+                    if (!isoString) return '';
+                    const date = new Date(isoString);
+                    if (isNaN(date.getTime())) return '';
+                    return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: true});
+                };
+
                 row.innerHTML = `
-                    <td>${startDate}</td>
-                    <td>${endDate}</td>
+                    <td class="editable-cell" data-field="start_date">${job.start_time ? new Date(job.start_time).toLocaleDateString() : ''}</td>
+                    <td class="editable-cell" data-field="start_time">${formatTime12Hour(job.start_time)}</td>
+                    <td class="editable-cell" data-field="end_date">${job.end_time ? new Date(job.end_time).toLocaleDateString() : ''}</td>
+                    <td class="editable-cell" data-field="end_time">${formatTime12Hour(job.end_time)}</td>
                     <td>${duration}</td>
-                    <td>${job.tech_name || ''}</td>
+                    <td class="editable-cell" data-field="tech_name">${job.tech_name || ''}</td>
                     <td class="editable-cell" data-field="location">${job.location || ''}</td>
                     <td class="editable-cell" data-field="notes">${job.notes || ''}</td>
-                    <td><button class="btn btn-secondary delete-btn" data-job-id="${job.id}">Delete?</button></td>
+                    <td><button class="btn btn-primary edit-btn" data-job-id="${job.id}">Edit</button></td>
                 `;
 
                 jobsTableBody.appendChild(row);
             });
-            
-            // Add event listeners for delete buttons
-            document.querySelectorAll('.delete-btn').forEach(button => {
+
+            // Add event listeners for edit buttons
+            document.querySelectorAll('.edit-btn').forEach(button => {
                 button.addEventListener('click', function() {
-                    // Don't allow deletion if a cell is currently being edited
-                    if (currentlyEditingCell) {
-                        alert('Please save or cancel changes before deleting a job.');
-                        return;
-                    }
-                    
                     const jobId = this.getAttribute('data-job-id');
-                    if (this.classList.contains('btn-secondary')) {
-                        // First click: change to red "DELETE!" button
-                        this.classList.remove('btn-secondary');
-                        this.classList.add('btn-danger');
-                        this.textContent = 'DELETE!';
-                    } else {
-                        // Second click: delete the job
-                        deleteJob(jobId);
-                    }
-                });
-            });
-            
-            // Add event listeners for editable cells
-            document.querySelectorAll('.editable-cell').forEach(cell => {
-                cell.addEventListener('click', function() {
-                    // Don't allow editing if another cell is already being edited
-                    if (currentlyEditingCell && currentlyEditingCell !== this) {
-                        return;
-                    }
-                    
-                    if (this.querySelector('input')) {
-                        return; // Already in edit mode
-                    }
-                    
-                    const currentValue = this.textContent;
-                    const field = this.getAttribute('data-field');
-                    const jobId = this.closest('tr').getAttribute('data-job-id');
-                    
-                    // Mark that we're currently editing this cell
-                    currentlyEditingCell = this;
-                    
-                    // Create input element
-                    const input = document.createElement('input');
-                    input.type = field === 'notes' ? 'text' : 'text';
-                    input.className = 'form-control form-control-sm';
-                    input.value = currentValue;
-                    input.setAttribute('data-original-value', currentValue); // Store original value
-                    
-                    // Replace cell content with input
-                    this.innerHTML = '';
-                    this.appendChild(input);
-                    input.focus();
-                    
-                    // Change the delete button to save/cancel buttons for this row
                     const row = this.closest('tr');
-                    const buttonCell = row.querySelector('td:last-child');
-                    buttonCell.innerHTML = '';
-                    
-                    const saveBtn = document.createElement('button');
-                    saveBtn.className = 'btn btn-success save-btn me-1';
-                    saveBtn.innerHTML = '✓'; // UTF-8 checkmark
-                    saveBtn.disabled = true; // Initially disabled until changes are made
-                    saveBtn.title = 'Save Changes';
-                    
-                    const cancelBtn = document.createElement('button');
-                    cancelBtn.className = 'btn btn-secondary cancel-btn';
-                    cancelBtn.innerHTML = '✕'; // UTF-8 multiplication sign (X)
-                    cancelBtn.title = 'Cancel Changes';
-                    
-                    buttonCell.appendChild(saveBtn);
-                    buttonCell.appendChild(cancelBtn);
-                    
-                    // Add listeners to the buttons
-                    saveBtn.onclick = function() {
-                        saveCellChanges(jobId, field, input.value, row);
-                    };
-                    
-                    cancelBtn.onclick = function() {
-                        cancelCellEditing(this, row, field, currentValue);
-                    };
-                    
-                    // Add input listener to enable save button when value changes
-                    input.addEventListener('input', function() {
-                        const originalValue = this.getAttribute('data-original-value');
-                        saveBtn.disabled = (this.value === originalValue);
-                    });
-                    
-                    // Add blur listener to revert if no changes made
-                    input.addEventListener('blur', function() {
-                        setTimeout(() => {
-                            // Only revert if the input still exists (not removed by save) and no changes were made
-                            if (input.parentNode && input.value === input.getAttribute('data-original-value')) {
-                                // Don't revert if the save button was clicked (which also causes blur)
-                                if (!saveBtn.classList.contains('clicked')) {
-                                    cancelCellEditing(cancelBtn, row, field, currentValue);
-                                }
-                            }
-                        }, 150); // Small delay to allow click event to register
-                    });
-                    
-                    // Add keydown listener for Enter and Escape
-                    input.addEventListener('keydown', function(e) {
-                        if (e.key === 'Enter') {
-                            if (!saveBtn.disabled) {
-                                saveBtn.click();
-                            }
-                        } else if (e.key === 'Escape') {
-                            cancelCellEditing(cancelBtn, row, field, currentValue);
-                        }
-                    });
+                    enterEditMode(row, jobId);
                 });
             });
         }
 
-        // Save changes to a cell
-        async function saveCellChanges(jobId, field, value, row) {
-            const token = localStorage.getItem('handymanager_admin_token');
-            if (!token) {
-                alert('Admin token not found. Please re-authenticate.');
-                showSettingsSection();
-                return;
-            }
 
-            try {
-                // Prepare update request to update job
-                const updatePayload = {
-                    token: token,
-                    job_id: jobId
-                };
-                
-                // Only include the field that was modified
-                if (field === 'location') {
-                    updatePayload.location = value;
-                } else if (field === 'notes') {
-                    updatePayload.notes = value;
-                }
-                
-                const updateResponse = await fetch('update-job.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(updatePayload)
-                });
-
-                const updateData = await updateResponse.json();
-
-                if (updateData.success) {
-                    // Get the cell that was edited
-                    const cell = row.querySelector('.editable-cell[data-field="' + field + '"]');
-                    
-                    // Update the cell value
-                    cell.innerHTML = value;
-                    
-                    // Change buttons back to delete button
-                    const buttonCell = row.querySelector('td:last-child');
-                    buttonCell.innerHTML = '<button class="btn btn-secondary delete-btn" data-job-id="' + jobId + '">Delete?</button>';
-                    
-                    // Add event listener to the new delete button
-                    const deleteBtn = buttonCell.querySelector('.delete-btn');
-                    deleteBtn.addEventListener('click', function() {
-                        const jobId = this.getAttribute('data-job-id');
-                        if (this.classList.contains('btn-secondary')) {
-                            // First click: change to red "DELETE!" button
-                            this.classList.remove('btn-secondary');
-                            this.classList.add('btn-danger');
-                            this.textContent = 'DELETE!';
-                        } else {
-                            // Second click: delete the job
-                            deleteJob(jobId);
-                        }
-                    });
-                    
-                    // Clear the currently editing flag
-                    currentlyEditingCell = null;
-                } else {
-                    alert('Error saving changes: ' + updateData.message);
-                }
-            } catch (error) {
-                console.error('Error saving cell changes:', error);
-                alert('Error saving changes');
-            }
-        }
-
-        // Cancel editing and revert to original state
-        function cancelCellEditing(cancelBtn, row, field, originalValue) {
-            const cell = row.querySelector('.editable-cell[data-field="' + field + '"]');
-            
-            // Revert the cell to its original content
-            cell.innerHTML = originalValue;
-            
-            // Change buttons back to delete button
-            const jobId = row.getAttribute('data-job-id');
-            const buttonCell = row.querySelector('td:last-child');
-            buttonCell.innerHTML = '<button class="btn btn-secondary delete-btn" data-job-id="' + jobId + '">Delete?</button>';
-            
-            // Add event listener to the new delete button
-            const deleteBtn = buttonCell.querySelector('.delete-btn');
-            deleteBtn.addEventListener('click', function() {
-                const jobId = this.getAttribute('data-job-id');
-                if (this.classList.contains('btn-secondary')) {
-                    // First click: change to red "DELETE!" button
-                    this.classList.remove('btn-secondary');
-                    this.classList.add('btn-danger');
-                    this.textContent = 'DELETE!';
-                } else {
-                    // Second click: delete the job
-                    deleteJob(jobId);
-                }
-            });
-            
-            // Clear the currently editing flag
-            currentlyEditingCell = null;
-        }
 
         // Delete job function
         async function deleteJob(jobId) {
@@ -752,7 +1008,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 alert('Please save or cancel changes before clearing filters.');
                 return;
             }
-            
+
             dateFromInput.value = '';
             dateToInput.value = '';
             techFilter.value = '';
@@ -773,7 +1029,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 alert('Please save or cancel changes before exporting.');
                 return;
             }
-            
+
             const filters = {};
 
             if (dateFromInput.value) {

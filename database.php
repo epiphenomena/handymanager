@@ -110,7 +110,7 @@ function updateJob($jobId, $startTime, $endTime, $location, $notes) {
 }
 
 // Function to partially update a job (only specific fields)
-function updateJobPartial($jobId, $location = null, $notes = null) {
+function updateJobPartial($jobId, $location = null, $notes = null, $start_time = null, $end_time = null, $tech_name = null) {
     $pdo = getDbConnection();
 
     $setClauses = [];
@@ -124,6 +124,21 @@ function updateJobPartial($jobId, $location = null, $notes = null) {
     if ($notes !== null) {
         $setClauses[] = "notes = :notes";
         $params['notes'] = $notes;
+    }
+
+    if ($start_time !== null) {
+        $setClauses[] = "start_time = :start_time";
+        $params['start_time'] = $start_time;
+    }
+
+    if ($end_time !== null) {
+        $setClauses[] = "end_time = :end_time";
+        $params['end_time'] = $end_time;
+    }
+
+    if ($tech_name !== null) {
+        $setClauses[] = "tech_name = :tech_name";
+        $params['tech_name'] = trim($tech_name);
     }
 
     if (empty($setClauses)) {

@@ -1,5 +1,5 @@
 <?php
-// update-job.php - Endpoint to update job details (location and notes)
+// update-job.php - Endpoint to update job details (all fields)
 
 require_once 'config.php';
 
@@ -35,15 +35,33 @@ if (!isset($input['job_id'])) {
 $jobId = $input['job_id'];
 $location = $input['location'] ?? null;
 $notes = $input['notes'] ?? null;
+$start_time = $input['start_time'] ?? null;
+$end_time = $input['end_time'] ?? null;
+$tech_name = $input['tech_name'] ?? null;
 
 // At least one field must be provided for update
-if ($location === null && $notes === null) {
-    sendJsonResponse(['success' => false, 'message' => 'At least one field (location or notes) must be provided for update']);
+if ($location === null && $notes === null && $start_time === null && $end_time === null && $tech_name === null) {
+    sendJsonResponse(['success' => false, 'message' => 'At least one field must be provided for update']);
+}
+
+// Validate date/time formats if provided
+if ($start_time !== null) {
+    $start_time = validateAndFormatDateTime($start_time);
+    if ($start_time === false) {
+        sendJsonResponse(['success' => false, 'message' => 'Invalid start time format']);
+    }
+}
+
+if ($end_time !== null) {
+    $end_time = validateAndFormatDateTime($end_time);
+    if ($end_time === false) {
+        sendJsonResponse(['success' => false, 'message' => 'Invalid end time format']);
+    }
 }
 
 // Update the job in database
 try {
-    $result = updateJobPartial($jobId, $location, $notes);
+    $result = updateJobPartial($jobId, $location, $notes, $start_time, $end_time, $tech_name);
     
     if ($result) {
         sendJsonResponse(['success' => true, 'message' => 'Job updated successfully']);
@@ -52,4 +70,15 @@ try {
     }
 } catch (Exception $e) {
     sendJsonResponse(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+}
+
+// Function to validate and format date/time
+function validateAndFormatDateTime($dateTimeString) {
+    // Try to parse the date/time string
+    $date = new DateTime($dateTimeString);
+    if ($date === false) {
+        return false;
+    }
+    // Return in ISO 8601 format
+    return $date->format('Y-m-d H:i:s');
 }
