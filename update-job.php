@@ -59,7 +59,7 @@ if (verifyAdminToken($token)) {
     }
     
     $requestTechName = $input['job_tech_name'];
-    if ($job['tech_name'] !== $requestTechName) {
+    if (trim($job['tech_name']) !== trim($requestTechName)) {
         sendJsonResponse(['success' => false, 'message' => 'You can only update your own jobs']);
     }
 } else {

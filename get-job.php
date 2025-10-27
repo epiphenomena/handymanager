@@ -43,7 +43,8 @@ if (verifyAdminToken($token)) {
     }
     
     // Verify the requesting tech can access this job
-    if ($job['tech_name'] !== $techName) {
+    // Trim both values to handle any potential whitespace issues
+    if (trim($job['tech_name']) !== trim($techName)) {
         sendJsonResponse(['success' => false, 'message' => 'You can only access your own jobs']);
     }
 } else {
