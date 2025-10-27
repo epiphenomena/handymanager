@@ -25,65 +25,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     jobIdInput.value = jobId;
     
-    // Load job details
+    // Load job details and set up form submission after loading
     loadJobDetails(jobId);
-    
-    // Handle form submission
-    editJobForm.addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        const token = localStorage.getItem('handymanager_token');
-        if (!token) {
-            alert('Authentication token not found. Please log in again.');
-            window.location.href = './';
-            return;
-        }
-        
-        const startDate = startDateInput.value;
-        const startTime = startTimeInput.value;
-        const endDate = endDateInput.value;
-        const endTime = endTimeInput.value;
-        const location = locationInput.value.trim(); // Trim whitespace
-        const notes = notesInput.value; // Don't trim whitespace to preserve formatting
-        
-        if (!startDate || !startTime || !location) {
-            alert('Please fill in all required fields');
-            return;
-        }
-        
-        const startDateTime = startDate + ' ' + startTime;
-        const endDateTime = endDate && endTime ? endDate + ' ' + endTime : null;
-        
-        // Update job
-        fetch('update-job.php', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                token: token,
-                job_id: jobId,
-                job_tech_name: loadedJob.tech_name, // Send the original tech name for verification
-                start_time: startDateTime,
-                end_time: endDateTime,
-                location: location,
-                notes: notes
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Redirect to home page without alert
-                window.location.href = './';
-            } else {
-                alert('Error updating job: ' + data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error updating job. Please try again.');
-        });
-    });
     
     // Load job details from backend
     function loadJobDetails(jobId) {
@@ -128,6 +71,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 } else {
                     notesInput.value = "Notes:\n- \n\nMaterials:\n- ";
                 }
+                
+                // Now that the job is loaded, set up the form submission
+                setupFormSubmission();
             } else {
                 alert('Error loading job: ' + data.message);
             }
@@ -135,6 +81,66 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(error => {
             console.error('Error:', error);
             alert('Error loading job. Please try again.');
+        });
+    }
+    
+    // Set up form submission after job is loaded
+    function setupFormSubmission() {
+        // Handle form submission
+        editJobForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const token = localStorage.getItem('handymanager_token');
+            if (!token) {
+                alert('Authentication token not found. Please log in again.');
+                window.location.href = './';
+                return;
+            }
+            
+            const startDate = startDateInput.value;
+            const startTime = startTimeInput.value;
+            const endDate = endDateInput.value;
+            const endTime = endTimeInput.value;
+            const location = locationInput.value.trim(); // Trim whitespace
+            const notes = notesInput.value; // Don't trim whitespace to preserve formatting
+            
+            if (!startDate || !startTime || !location) {
+                alert('Please fill in all required fields');
+                return;
+            }
+            
+            const startDateTime = startDate + ' ' + startTime;
+            const endDateTime = endDate && endTime ? endDate + ' ' + endTime : null;
+            
+            // Update job
+            fetch('update-job.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    token: token,
+                    job_id: jobId,
+                    job_tech_name: loadedJob.tech_name, // Send the original tech name for verification
+                    start_time: startDateTime,
+                    end_time: endDateTime,
+                    location: location,
+                    notes: notes
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Redirect to home page without alert
+                    window.location.href = './';
+                } else {
+                    alert('Error updating job: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating job. Please try again.');
+            });
         });
     }
 });
