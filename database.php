@@ -81,7 +81,7 @@ function getJobById($jobId) {
     $pdo = getDbConnection();
 
     $stmt = $pdo->prepare("
-        SELECT id, start_time, end_time, location, notes
+        SELECT id, tech_name, start_time, end_time, location, notes
         FROM jobs
         WHERE id = :job_id
     ");
