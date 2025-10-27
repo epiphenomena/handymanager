@@ -10,6 +10,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const locationInput = document.getElementById('location');
     const notesInput = document.getElementById('notes');
     
+    // Variable to store the loaded job data
+    let loadedJob = null;
+    
     // Get job ID from URL parameter
     const urlParams = new URLSearchParams(window.location.search);
     const jobId = urlParams.get('id');
@@ -60,6 +63,7 @@ document.addEventListener('DOMContentLoaded', function() {
             body: JSON.stringify({
                 token: token,
                 job_id: jobId,
+                job_tech_name: loadedJob.tech_name, // Send the original tech name for verification
                 start_time: startDateTime,
                 end_time: endDateTime,
                 location: location,
@@ -103,24 +107,24 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                const job = data.job;
+                loadedJob = data.job; // Store the loaded job data in the global variable
                 
                 // Parse start time
-                const startDateTime = new Date(job.start_time);
+                const startDateTime = new Date(loadedJob.start_time);
                 startDateInput.value = startDateTime.toISOString().split('T')[0];
                 startTimeInput.value = startDateTime.toTimeString().substring(0, 5);
                 
                 // Parse end time if exists
-                if (job.end_time) {
-                    const endDateTime = new Date(job.end_time);
+                if (loadedJob.end_time) {
+                    const endDateTime = new Date(loadedJob.end_time);
                     endDateInput.value = endDateTime.toISOString().split('T')[0];
                     endTimeInput.value = endDateTime.toTimeString().substring(0, 5);
                 }
                 
-                locationInput.value = job.location;
+                locationInput.value = loadedJob.location;
                 // Prefill notes with template if empty
-                if (job.notes) {
-                    notesInput.value = job.notes;
+                if (loadedJob.notes) {
+                    notesInput.value = loadedJob.notes;
                 } else {
                     notesInput.value = "Notes:\n- \n\nMaterials:\n- ";
                 }

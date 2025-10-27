@@ -22,16 +22,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // Get JSON input
 $input = json_decode(file_get_contents('php://input'), true);
 
-// Validate admin token
-if (!isset($input['token']) || !verifyAdminToken($input['token'])) {
-    sendJsonResponse(['success' => false, 'message' => 'Invalid admin token']);
-}
-
 // Validate required parameters
-if (!isset($input['job_id'])) {
-    sendJsonResponse(['success' => false, 'message' => 'Job ID is required']);
+if (!isset($input['token']) || !isset($input['job_id'])) {
+    sendJsonResponse(['success' => false, 'message' => 'Token and Job ID are required']);
 }
 
+$token = $input['token'];
 $jobId = $input['job_id'];
 $location = $input['location'] ?? null;
 $notes = $input['notes'] ?? null;
@@ -42,6 +38,33 @@ $tech_name = $input['tech_name'] ?? null;
 // At least one field must be provided for update
 if ($location === null && $notes === null && $start_time === null && $end_time === null && $tech_name === null) {
     sendJsonResponse(['success' => false, 'message' => 'At least one field must be provided for update']);
+}
+
+// Check if it's an admin token first
+if (verifyAdminToken($token)) {
+    // Admin can update any job, proceed directly
+} else if (verifyToken($token)) {
+    // Regular tech token - verify that the tech owns this job
+    // Get the job to check ownership
+    $job = getJobById($jobId);
+    if (!$job) {
+        sendJsonResponse(['success' => false, 'message' => 'Job not found']);
+    }
+    
+    // For tech users, since we have a shared token, we need to check that the 
+    // tech name sent in the request matches the job's tech name (security check)
+    // This assumes the frontend is sending the original tech name from the job data
+    if (!isset($input['job_tech_name'])) {
+        sendJsonResponse(['success' => false, 'message' => 'Job tech name is required for verification']);
+    }
+    
+    $requestTechName = $input['job_tech_name'];
+    if ($job['tech_name'] !== $requestTechName) {
+        sendJsonResponse(['success' => false, 'message' => 'You can only update your own jobs']);
+    }
+} else {
+    // Invalid token
+    sendJsonResponse(['success' => false, 'message' => 'Invalid token']);
 }
 
 // Validate date/time formats if provided
