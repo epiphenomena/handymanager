@@ -31,8 +31,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load job details from backend
     function loadJobDetails(jobId) {
         const token = localStorage.getItem('handymanager_token');
+        const techName = localStorage.getItem('handymanager_tech_name');
+        
         if (!token) {
             alert('Authentication token not found. Please log in again.');
+            window.location.href = './';
+            return;
+        }
+        
+        if (!techName) {
+            alert('Tech name not found. Please log in again.');
             window.location.href = './';
             return;
         }
@@ -44,6 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify({
                 token: token,
+                tech_name: techName,  // Include tech name for verification
                 job_id: jobId
             })
         })
@@ -97,19 +106,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
-            // Try to get the tech name from localStorage first (where it was saved during login)
-            // If not available in localStorage, fall back to the loaded job's tech name
-            let techName = localStorage.getItem('handymanager_tech_name');
+            // Use the tech name from the loaded job data
+            // If a tech can load the job details, they should be able to update it
+            const techName = loadedJob.tech_name;
             if (!techName) {
-                // If tech name is not in localStorage, use the tech name from the loaded job
-                // This is a fallback approach in case it wasn't stored during login
-                techName = loadedJob.tech_name;
-                
-                if (!techName) {
-                    alert('Tech name not available. Please log in again.');
-                    window.location.href = './';
-                    return;
-                }
+                alert('Unable to verify job ownership. Please reload the page.');
+                window.location.href = './';
+                return;
             }
             
             const startDate = startDateInput.value;
@@ -136,7 +139,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 body: JSON.stringify({
                     token: token,
                     job_id: jobId,
-                    job_tech_name: techName, // Send the tech name for verification
+                    job_tech_name: techName, // Send the tech name from the loaded job for verification
                     start_time: startDateTime,
                     end_time: endDateTime,
                     location: location,

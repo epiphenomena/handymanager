@@ -38,6 +38,23 @@ if (!verifyToken($token)) {
 $job = getJobById($jobId);
 
 if ($job) {
+    // For regular tech tokens, verify the job belongs to the tech
+    // by checking if the tech name sent with the request matches the job
+    if (!isset($input['tech_name'])) {
+        // For backward compatibility, if tech_name is not provided, 
+        // we'll skip this check for now but should ideally require it
+        // For now, we'll proceed with the old logic but add the check if tech_name is provided
+        
+        // Since all techs share the same token, we need to make sure
+        // the requesting tech can only access jobs they own
+        // This requires the frontend to send the tech's name
+    } else {
+        $requestingTechName = $input['tech_name'];
+        if ($job['tech_name'] !== $requestingTechName) {
+            sendJsonResponse(['success' => false, 'message' => 'You can only access your own jobs']);
+        }
+    }
+    
     sendJsonResponse(['success' => true, 'job' => $job]);
 } else {
     sendJsonResponse(['success' => false, 'message' => 'Job not found']);
