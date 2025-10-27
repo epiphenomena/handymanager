@@ -97,6 +97,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
+            // Try to get the tech name from localStorage first (where it was saved during login)
+            // If not available in localStorage, fall back to the loaded job's tech name
+            let techName = localStorage.getItem('handymanager_tech_name');
+            if (!techName) {
+                // If tech name is not in localStorage, use the tech name from the loaded job
+                // This is a fallback approach in case it wasn't stored during login
+                techName = loadedJob.tech_name;
+                
+                if (!techName) {
+                    alert('Tech name not available. Please log in again.');
+                    window.location.href = './';
+                    return;
+                }
+            }
+            
             const startDate = startDateInput.value;
             const startTime = startTimeInput.value;
             const endDate = endDateInput.value;
@@ -121,7 +136,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 body: JSON.stringify({
                     token: token,
                     job_id: jobId,
-                    job_tech_name: loadedJob.tech_name, // Send the original tech name for verification
+                    job_tech_name: techName, // Send the tech name for verification
                     start_time: startDateTime,
                     end_time: endDateTime,
                     location: location,
