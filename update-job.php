@@ -60,7 +60,7 @@ if (verifyAdminToken($token)) {
     
     $requestTechName = $input['job_tech_name'];
     if (trim($job['tech_name']) !== trim($requestTechName)) {
-        sendJsonResponse(['success' => false, 'message' => 'You can only update your own jobs']);
+        sendJsonResponse(['success' => false, 'message' => 'You can only update your own jobs. Debug: Job tech name=\'' . trim($job['tech_name']) . '\', Requesting tech name=\'' . trim($requestTechName) . '\'']);
     }
 } else {
     // Invalid token
