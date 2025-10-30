@@ -1,9 +1,10 @@
 <?php
 // config.php - Configuration and utility functions
 
-// Hardcoded token for authentication
-define('VALID_TOKEN', 'handyman');
-define('ADMIN_TOKEN', 'admin123'); // Separate token for admin access
+// Load configuration from config.json
+$config = json_decode(file_get_contents('config.json'), true);
+define('VALID_TOKEN', $config['VALID_TOKEN']);
+define('ADMIN_TOKEN', $config['ADMIN_TOKEN']);
 
 // Include database functions
 require_once 'database.php';
