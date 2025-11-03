@@ -18,23 +18,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     sendJsonResponse(['success' => false, 'message' => 'Only POST requests allowed']);
 }
 
-// Get JSON input
-$input = json_decode(file_get_contents('php://input'), true);
-
-// Validate input
-if (!isset($input['token']) || !isset($input['tech_name']) || !isset($input['start_time']) || !isset($input['location'])) {
-    sendJsonResponse(['success' => false, 'message' => 'Missing required fields']);
-}
+// Get and validate input
+$input = getValidatedInput(['token', 'tech_name', 'start_time', 'location']);
 
 $token = $input['token'];
 $techName = $input['tech_name'];
 $startTime = $input['start_time'];
 $location = $input['location'];
-
-// Verify token
-if (!verifyToken($token)) {
-    sendJsonResponse(['success' => false, 'message' => 'Invalid token']);
-}
 
 // Create new job in database
 $success = createJob($techName, $startTime, $location);

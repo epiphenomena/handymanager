@@ -19,13 +19,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     sendJsonResponse(['success' => false, 'message' => 'Method not allowed']);
 }
 
-// Get JSON input
-$input = json_decode(file_get_contents('php://input'), true);
-
-// Validate required parameters
-if (!isset($input['token']) || !isset($input['job_id'])) {
-    sendJsonResponse(['success' => false, 'message' => 'Token and Job ID are required']);
-}
+// Get and validate input with admin check
+$input = getValidatedInput(['token', 'job_id']);
 
 $token = $input['token'];
 $jobId = $input['job_id'];
@@ -34,37 +29,33 @@ $notes = $input['notes'] ?? null;
 $start_time = $input['start_time'] ?? null;
 $end_time = $input['end_time'] ?? null;
 $tech_name = $input['tech_name'] ?? null;
+$isAdmin = $input['_isAdmin'];
 
 // At least one field must be provided for update
 if ($location === null && $notes === null && $start_time === null && $end_time === null && $tech_name === null) {
     sendJsonResponse(['success' => false, 'message' => 'At least one field must be provided for update']);
 }
 
-// Check if it's an admin token first
-if (verifyAdminToken($token)) {
-    // Admin can update any job, proceed directly
-} else if (verifyToken($token)) {
+// Check if it's not an admin token, then verify that the tech owns this job
+if (!$isAdmin) {
     // Regular tech token - verify that the tech owns this job
     // Get the job to check ownership
     $job = getJobById($jobId);
     if (!$job) {
         sendJsonResponse(['success' => false, 'message' => 'Job not found']);
     }
-    
-    // For tech users, since we have a shared token, we need to check that the 
+
+    // For tech users, since we have a shared token, we need to check that the
     // tech name sent in the request matches the job's tech name (security check)
     // This assumes the frontend is sending the original tech name from the job data
     if (!isset($input['job_tech_name'])) {
         sendJsonResponse(['success' => false, 'message' => 'Job tech name is required for verification']);
     }
-    
+
     $requestTechName = $input['job_tech_name'];
     if (trim($job['tech_name']) !== trim($requestTechName)) {
         sendJsonResponse(['success' => false, 'message' => 'You can only update your own jobs. Debug: Job tech name=\'' . trim($job['tech_name']) . '\', Requesting tech name=\'' . trim($requestTechName) . '\'']);
     }
-} else {
-    // Invalid token
-    sendJsonResponse(['success' => false, 'message' => 'Invalid token']);
 }
 
 // Validate date/time formats if provided
@@ -85,7 +76,7 @@ if ($end_time !== null) {
 // Update the job in database
 try {
     $result = updateJobPartial($jobId, $location, $notes, $start_time, $end_time, $tech_name);
-    
+
     if ($result) {
         sendJsonResponse(['success' => true, 'message' => 'Job updated successfully']);
     } else {
