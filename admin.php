@@ -1080,7 +1080,24 @@ function exportTechCsv($tech, $month) {
         #menu-toggle { display: none; font-size: 18px; line-height: 1; padding: 4px 12px; }
 
         @media (max-width: 700px) {
-            #menu-toggle { display: inline-block; }
+            /* Two compact rows: brand + ⋮ on the first, nav tabs in a single
+               scrollable strip on the second */
+            .topbar { gap: 8px; }
+            .topbar .spacer { display: none; }
+
+            #menu-toggle { display: inline-block; order: 1; margin-left: auto; }
+
+            nav {
+                order: 2;
+                width: 100%;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+            }
+
+            nav::-webkit-scrollbar { display: none; }
+            nav button { white-space: nowrap; flex-shrink: 0; }
 
             .topbar-menu {
                 display: none;
