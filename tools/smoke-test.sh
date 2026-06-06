@@ -201,6 +201,29 @@ check "replayed uuid is idempotent" "\"task_id\":$QTASK_ID" "$OUT"
 OUT=$(post complete-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\",\"task_uuid\":\"$UUID\",\"end_time\":\"2026-06-06 16:00\",\"notes\":\"synced from offline queue\",\"queued\":true}")
 check "complete by client uuid" '"success":true' "$OUT"
 
+# --- Clock In/Out: own admin view, tech filter, never billable ---
+CLOCK_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if($j["is_system"]) { echo $j["id"]; break; }')
+
+OUT=$(post create-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\",\"job_id\":$CLOCK_ID,\"start_time\":\"2026-06-06 07:00\"}")
+CLOCK_TASK_ID=$(echo "$OUT" | php -r 'echo json_decode(stream_get_contents(STDIN),true)["task_id"];')
+post complete-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\",\"task_id\":$CLOCK_TASK_ID,\"end_time\":\"2026-06-06 07:45\",\"notes\":\"loaded truck\"}" >/dev/null
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-clock')
+check "clock view shows entry" 'loaded truck' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-clock' --data-urlencode 'tech=Joe')
+if [[ "$OUT" == *'loaded truck'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - clock tech filter excludes other techs"
+else
+    PASS=$((PASS+1)); echo "ok   - clock tech filter excludes other techs"
+fi
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$CLOCK_ID" --data-urlencode 'status=ready_for_billing')
+check "clock job cannot be marked for billing" 'cannot change status' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-job' --data-urlencode "id=$CLOCK_ID")
+check "clock job detail redirects to clock view" 'Clock In/Out' "$OUT"
+
 # --- Job and report exports ---
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-job-json' --data-urlencode "id=$JOB_ID")
 check "job JSON export has tasks" '"tasks"' "$OUT"

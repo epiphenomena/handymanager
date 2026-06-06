@@ -45,6 +45,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             renderJobDetail((int)$_POST['id']);
             break;
 
+        case 'view-clock':
+            renderClockView($_POST['tech'] ?? '', $_POST['month'] ?? '');
+            break;
+
         case 'set-status':
             list($ok, $message) = setJobStatus((int)$_POST['id'], $_POST['status'] ?? '');
             renderJobDetail((int)$_POST['id'], $ok ? 'Status updated' : $message, !$ok);
@@ -124,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
 
         case 'task-edit-form':
-            renderTaskEditForm((int)$_POST['task_id']);
+            renderTaskEditForm((int)$_POST['task_id'], $_POST['clock_tech'] ?? '', $_POST['clock_month'] ?? '');
             break;
 
         case 'save-task':
@@ -141,7 +145,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'notes' => $_POST['notes'] ?? '',
                     'tech_name' => trim($_POST['tech_name'] ?? '') ?: null,
                 ]);
-                renderJobDetail((int)$task['job_id'], 'Task updated');
+                if ($task['job_is_system']) {
+                    renderClockView($_POST['clock_tech'] ?? '', $_POST['clock_month'] ?? '', 'Entry updated');
+                } else {
+                    renderJobDetail((int)$task['job_id'], 'Task updated');
+                }
             }
             break;
 
@@ -149,7 +157,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $task = getTaskById((int)$_POST['task_id']);
             if ($task) {
                 deleteTask($task['id']);
-                renderJobDetail((int)$task['job_id'], 'Task deleted');
+                if ($task['job_is_system']) {
+                    renderClockView($_POST['clock_tech'] ?? '', $_POST['clock_month'] ?? '', 'Entry deleted');
+                } else {
+                    renderJobDetail((int)$task['job_id'], 'Task deleted');
+                }
             }
             break;
 
@@ -331,6 +343,11 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
         echo '<div class="flash flash-error">Job not found</div>';
         return;
     }
+    // The Clock in/out job has its own dedicated view - no statuses, no billing
+    if ($job['is_system']) {
+        renderClockView('', '', $message, $isError);
+        return;
+    }
     $tasks = getTasksForJob($jobId);
     $totalHours = 0;
     foreach ($tasks as $task) {
@@ -472,6 +489,70 @@ function renderJobEditForm($jobId) {
     <?php
 }
 
+function renderClockView($tech = '', $month = '', $message = null, $isError = false) {
+    $tasks = getClockTasks($tech, $month);
+    $techs = getTechNames();
+    $months = getClockTaskMonths();
+    $totalHours = 0;
+    foreach ($tasks as $task) {
+        $totalHours += (float)($task['hours'] ?? 0);
+    }
+    ?>
+    <?= flash($message, $isError) ?>
+    <div class="view-header">
+        <h2>Clock In/Out</h2>
+        <span class="muted"><?= count($tasks) ?> entr<?= count($tasks) === 1 ? 'y' : 'ies' ?>, <?= fmtHours($totalHours) ?></span>
+    </div>
+
+    <form class="form-row report-controls" hx-post="admin.php" hx-target="#content" hx-trigger="change">
+        <input type="hidden" name="action" value="view-clock">
+        <label>Tech
+            <select name="tech">
+                <option value="">All techs</option>
+                <?php foreach ($techs as $t): ?>
+                <option value="<?= h($t) ?>" <?= $t === $tech ? 'selected' : '' ?>><?= h($t) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label>Month
+            <select name="month">
+                <option value="">All months</option>
+                <?php foreach ($months as $m): ?>
+                <option value="<?= h($m) ?>" <?= $m === $month ? 'selected' : '' ?>><?= h(fmtMonth($m)) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+    </form>
+
+    <?php if (empty($tasks)): ?>
+        <p class="empty-state">No clock in/out entries<?= $tech !== '' || $month !== '' ? ' for this filter' : '' ?>.</p>
+        <?php return; ?>
+    <?php endif; ?>
+
+    <table class="report-table">
+        <thead><tr><th>Tech</th><th>Start</th><th>End</th><th>Hours</th><th>Notes</th><th></th></tr></thead>
+        <tbody>
+            <?php foreach ($tasks as $task): ?>
+            <tr>
+                <td><?= h($task['tech_name']) ?></td>
+                <td><?= h(fmtDt($task['start_time'])) ?></td>
+                <td><?= $task['end_time'] ? h(fmtDt($task['end_time'])) : '<em>in progress</em>' ?></td>
+                <td><?= fmtHours($task['hours']) ?></td>
+                <td class="notes-cell"><?= $task['notes'] ? h(mb_strimwidth($task['notes'], 0, 160, '…')) : '' ?></td>
+                <td>
+                    <button class="btn btn-ghost btn-xs" hx-post="admin.php" hx-target="#content"
+                        hx-vals='<?= h(json_encode(['action' => 'task-edit-form', 'task_id' => (int)$task['id'], 'clock_tech' => $tech, 'clock_month' => $month])) ?>'>Edit</button>
+                    <button class="btn btn-danger btn-xs" hx-post="admin.php" hx-target="#content"
+                        hx-confirm="Delete this clock entry? This cannot be undone."
+                        hx-vals='<?= h(json_encode(['action' => 'delete-task', 'task_id' => (int)$task['id'], 'clock_tech' => $tech, 'clock_month' => $month])) ?>'>Delete</button>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    <?php
+}
+
 function renderTaskAddForm($jobId) {
     $job = getJobById($jobId);
     if (!jobAcceptsTasks($job)) {
@@ -520,7 +601,7 @@ function renderTaskAddForm($jobId) {
     <?php
 }
 
-function renderTaskEditForm($taskId) {
+function renderTaskEditForm($taskId, $clockTech = '', $clockMonth = '') {
     $task = getTaskById($taskId);
     if (!$task) {
         echo '<div class="flash flash-error">Task not found</div>';
@@ -528,11 +609,16 @@ function renderTaskEditForm($taskId) {
     }
     $startTs = strtotime($task['start_time']);
     $endTs = $task['end_time'] ? strtotime($task['end_time']) : null;
+    $isClock = (bool)$task['job_is_system'];
     ?>
     <div class="timeline-item timeline-editing">
         <form class="form-stack" hx-post="admin.php" hx-target="#content">
             <input type="hidden" name="action" value="save-task">
             <input type="hidden" name="task_id" value="<?= (int)$task['id'] ?>">
+            <?php if ($isClock): // return to the filtered clock view after saving ?>
+            <input type="hidden" name="clock_tech" value="<?= h($clockTech) ?>">
+            <input type="hidden" name="clock_month" value="<?= h($clockMonth) ?>">
+            <?php endif; ?>
             <div class="form-row">
                 <label>Tech
                     <input type="text" name="tech_name" value="<?= h($task['tech_name']) ?>" required>
@@ -555,8 +641,13 @@ function renderTaskEditForm($taskId) {
             </label>
             <div class="form-actions">
                 <button type="submit" class="btn btn-primary btn-sm">Save Task</button>
+                <?php if ($isClock): ?>
+                <button type="button" class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#content"
+                    hx-vals='<?= h(json_encode(['action' => 'view-clock', 'tech' => $clockTech, 'month' => $clockMonth])) ?>'>Cancel</button>
+                <?php else: ?>
                 <button type="button" class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#content"
                     hx-vals='{"action":"view-job","id":<?= (int)$task['job_id'] ?>}'>Cancel</button>
+                <?php endif; ?>
             </div>
         </form>
     </div>
@@ -1254,6 +1345,8 @@ function exportTechCsv($tech, $month) {
                 hx-vals='{"action":"view-jobs","group":"billing"}'>Billing</button>
             <button data-nav="paid" hx-post="admin.php" hx-target="#content"
                 hx-vals='{"action":"view-jobs","group":"paid"}'>Paid</button>
+            <button data-nav="clock" hx-post="admin.php" hx-target="#content"
+                hx-vals='{"action":"view-clock"}'>Clock</button>
             <button data-nav="log-call" hx-post="admin.php" hx-target="#content"
                 hx-vals='{"action":"log-call-form"}'>Log Call</button>
             <button data-nav="reports" hx-post="admin.php" hx-target="#content"

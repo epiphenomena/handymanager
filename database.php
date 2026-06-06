@@ -291,8 +291,12 @@ function setJobStatus($jobId, $status) {
         return [false, 'Invalid status'];
     }
     $job = getJobById($jobId);
-    if (!$job || $job['is_system']) {
+    if (!$job) {
         return [false, 'Job not found'];
+    }
+    // The Clock in/out job is permanent: never billed, never closed
+    if ($job['is_system']) {
+        return [false, 'The Clock in/out job cannot change status'];
     }
 
     // Closing to new tasks requires all tasks to be finished (have an end time)
@@ -539,6 +543,41 @@ function getTasksForJob($jobId) {
     ");
     $stmt->execute(['job_id' => $jobId]);
     return $stmt->fetchAll();
+}
+
+// Clock in/out entries (tasks on the system job), optionally filtered by
+// tech and/or month, newest first
+function getClockTasks($tech = '', $month = '') {
+    $where = ['j.is_system = 1'];
+    $params = [];
+    if ($tech !== '') {
+        $where[] = 't.tech_name = :tech';
+        $params['tech'] = $tech;
+    }
+    if ($month !== '') {
+        $where[] = "strftime('%Y-%m', t.start_time) = :month";
+        $params['month'] = $month;
+    }
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("
+        SELECT t.*, (julianday(t.end_time) - julianday(t.start_time)) * 24.0 AS hours
+        FROM tasks t JOIN jobs j ON j.id = t.job_id
+        WHERE " . implode(' AND ', $where) . "
+        ORDER BY t.start_time DESC
+    ");
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+// Months ('YYYY-MM') that have clock in/out entries, newest first
+function getClockTaskMonths() {
+    $pdo = getDbConnection();
+    return $pdo->query("
+        SELECT DISTINCT strftime('%Y-%m', t.start_time) AS month
+        FROM tasks t JOIN jobs j ON j.id = t.job_id
+        WHERE j.is_system = 1
+        ORDER BY month DESC
+    ")->fetchAll(PDO::FETCH_COLUMN);
 }
 
 // ---------------------------------------------------------------------------
