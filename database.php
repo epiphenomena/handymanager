@@ -160,6 +160,28 @@ function migration1_jobs_and_tasks($pdo) {
                 ]);
             }
         }
+
+        // One-time cleanup: migrated jobs with no task activity in the last
+        // 60 days go straight to ready for billing, so old history doesn't
+        // clutter the tech picker or the Active tab. Jobs with a dangling
+        // unfinished task are left in progress for the admin to review
+        // (a job must not be closed while a task has no end time).
+        $stmt = $pdo->prepare("
+            UPDATE jobs
+            SET status = 'ready_for_billing', ready_for_billing_at = :now
+            WHERE is_system = 0 AND status = 'in_progress'
+              AND id NOT IN (
+                  SELECT job_id FROM tasks
+                  WHERE COALESCE(end_time, start_time) > :cutoff
+              )
+              AND id NOT IN (
+                  SELECT job_id FROM tasks WHERE end_time IS NULL
+              )
+        ");
+        $stmt->execute([
+            'now' => now(),
+            'cutoff' => date('Y-m-d H:i:s', strtotime('-60 days')),
+        ]);
     }
 }
 

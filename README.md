@@ -113,8 +113,11 @@ days). Three layers handle this:
 `database.php` runs versioned migrations automatically on first request,
 tracked with `PRAGMA user_version`. Migration 1 splits the legacy single
 `jobs` table into `jobs` + `tasks` (the old table is preserved as
-`legacy_jobs`); each distinct legacy location becomes one job. To add a
-schema change, append a numbered migration in `initDatabase()`.
+`legacy_jobs`); each distinct legacy location becomes one in-progress job,
+except jobs with no task activity in the last 60 days, which are closed
+out as ready for billing (unless they contain a task with no end time —
+those stay in progress for admin review). To add a schema change, append
+a numbered migration in `initDatabase()`.
 
 ```
 jobs:  id, name, customer_name, phone, call_notes, admin_notes,
