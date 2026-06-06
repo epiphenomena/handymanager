@@ -44,6 +44,7 @@ function initDatabase() {
     $migrations = [
         1 => 'migration1_jobs_and_tasks',
         2 => 'migration2_task_client_uuid',
+        3 => 'migration3_merge_legacy_clock_job',
     ];
 
     foreach ($migrations as $target => $fn) {
@@ -190,6 +191,28 @@ function migration1_jobs_and_tasks($pdo) {
 function migration2_task_client_uuid($pdo) {
     $pdo->exec("ALTER TABLE tasks ADD COLUMN client_uuid TEXT");
     $pdo->exec("CREATE UNIQUE INDEX idx_tasks_client_uuid ON tasks(client_uuid) WHERE client_uuid IS NOT NULL");
+}
+
+// Migration 3: the legacy db used the location "Clocked in/out", which
+// migration 1 turned into a regular job instead of recognizing it as clock
+// time. Move those tasks onto the system Clock in/out job and remove the
+// stray job(s).
+function migration3_merge_legacy_clock_job($pdo) {
+    $clockId = $pdo->query("SELECT id FROM jobs WHERE is_system = 1 LIMIT 1")->fetchColumn();
+    if (!$clockId) {
+        return;
+    }
+    $stmt = $pdo->query("
+        SELECT id FROM jobs
+        WHERE is_system = 0
+          AND LOWER(TRIM(name)) IN ('clocked in/out', 'clock in/out', 'clocked in / out', 'clock in / out')
+    ");
+    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $strayId) {
+        $pdo->prepare("UPDATE tasks SET job_id = :clock_id WHERE job_id = :stray_id")
+            ->execute(['clock_id' => $clockId, 'stray_id' => $strayId]);
+        $pdo->prepare("DELETE FROM jobs WHERE id = :stray_id")
+            ->execute(['stray_id' => $strayId]);
+    }
 }
 
 // ---------------------------------------------------------------------------
