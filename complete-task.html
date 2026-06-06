@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Complete Task - HandyManager</title>
-    <link rel="stylesheet" href="css/styles.css?v=1.4">
+    <link rel="stylesheet" href="css/styles.css?v=2.0">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4CAF50">
     <style>
@@ -72,14 +72,16 @@ Materials:
         </main>
     </div>
 
+    <script src="js/offline.js?v=1"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const completeTaskForm = document.getElementById('complete-task-form');
             const notesField = document.getElementById('notes');
             const urlParams = new URLSearchParams(window.location.search);
-            const taskId = urlParams.get('id');
+            const taskId = urlParams.get('id');         // server task
+            const taskUuid = urlParams.get('uuid');     // task created offline
 
-            document.getElementById('task-id').value = taskId;
+            document.getElementById('task-id').value = taskId || taskUuid || '';
 
             // Prefill end date and time with current date and time
             const now = new Date();
@@ -113,16 +115,29 @@ Materials:
                     return;
                 }
 
+                const payload = {
+                    tech_name: techName,
+                    end_time: `${endDate} ${endTime}`,
+                    notes: notes
+                };
+                if (taskId) {
+                    payload.task_id = taskId;
+                } else {
+                    payload.task_uuid = taskUuid;
+                }
+
+                // If this task was started offline and its create is still
+                // queued, queue the completion behind it (FIFO keeps order)
+                if (taskUuid && hmOffline.hasPendingCreate(taskUuid)) {
+                    hmOffline.enqueue('complete-task.php', payload);
+                    window.location.href = './';
+                    return;
+                }
+
                 fetch('complete-task.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        token: token,
-                        tech_name: techName,
-                        task_id: taskId,
-                        end_time: `${endDate} ${endTime}`,
-                        notes: notes
-                    })
+                    body: JSON.stringify(Object.assign({ token: token }, payload))
                 })
                 .then(response => response.json())
                 .then(data => {
@@ -132,9 +147,10 @@ Materials:
                         alert('Error completing task: ' + data.message);
                     }
                 })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Error completing task. Please try again.');
+                .catch(() => {
+                    // Offline: queue it - it syncs on the next connection
+                    hmOffline.enqueue('complete-task.php', payload);
+                    window.location.href = './';
                 });
             });
 

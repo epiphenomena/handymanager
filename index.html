@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HandyManager</title>
-    <link rel="stylesheet" href="css/styles.css?v=1.4">
+    <link rel="stylesheet" href="css/styles.css?v=2.0">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4CAF50">
 </head>
@@ -60,14 +60,27 @@
         </main>
     </div>
 
+    <script src="js/offline.js?v=1"></script>
     <script>
         // Register service worker for PWA functionality
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
                 navigator.serviceWorker.register('/service-worker.js')
+                    .then(function(registration) {
+                        registration.update(); // check for a new version on every open
+                    })
                     .catch(function(err) {
                         console.log('ServiceWorker registration failed: ', err);
                     });
+            });
+
+            // When a new service worker takes over, reload once so the page
+            // and its assets come from the new version (busts legacy installs)
+            let refreshed = false;
+            navigator.serviceWorker.addEventListener('controllerchange', function() {
+                if (refreshed) return;
+                refreshed = true;
+                window.location.reload();
             });
         }
 
@@ -166,28 +179,31 @@
                 return `${month}/${day} ${hours}:${minutes}`;
             }
 
-            // Load in-progress tasks from backend
+            // Load in-progress tasks: sync any queued offline work first, then
+            // fetch fresh; fall back to the last-known list when offline
             function loadTasks(token, techName) {
-                fetch('get-tasks.php', {
+                hmOffline.syncQueue()
+                .then(() => fetch('get-tasks.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token: token, tech_name: techName })
-                })
+                }))
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
+                        hmOffline.cacheSet('tasks', data.tasks);
                         displayTasks(data.tasks);
                     } else {
                         alert('Error loading tasks: ' + data.message);
                     }
                 })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Error loading tasks. Please try again.');
+                .catch(() => {
+                    // Offline: show the last-known list plus anything queued
+                    displayTasks(hmOffline.cacheGet('tasks') || []);
                 });
             }
 
-            // Load history from backend
+            // Load history from backend; fall back to last-known when offline
             function loadHistory(token, techName) {
                 fetch('get-latest-tasks.php', {
                     method: 'POST',
@@ -197,36 +213,51 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
+                        hmOffline.cacheSet('history', data.tasks);
                         displayHistory(data.tasks);
                     } else {
                         alert('Error loading history: ' + data.message);
                     }
                 })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Error loading history. Please try again.');
+                .catch(() => {
+                    displayHistory(hmOffline.cacheGet('history') || []);
                 });
             }
 
-            // Display in-progress tasks in the list
+            // Display in-progress tasks: server tasks (minus those with a
+            // queued completion) plus tasks started offline and not yet synced
             function displayTasks(tasks) {
                 tasksList.innerHTML = '';
 
-                if (tasks.length === 0) {
+                const queuedCompletions = hmOffline.completedTaskIds();
+                const serverTasks = tasks.filter(task => !queuedCompletions.has(String(task.id)));
+                const offlineTasks = hmOffline.pendingTasks();
+
+                if (serverTasks.length === 0 && offlineTasks.length === 0) {
                     const noTasksItem = document.createElement('li');
                     noTasksItem.textContent = 'No in-progress tasks';
                     tasksList.appendChild(noTasksItem);
                     return;
                 }
 
-                tasks.forEach(task => {
+                function addItem(href, label) {
                     const listItem = document.createElement('li');
                     const link = document.createElement('a');
-                    link.href = `complete-task.html?id=${task.id}`;
+                    link.href = href;
                     link.className = 'job-link';
-                    link.textContent = `${task.job_name} - Started: ${formatDateWithoutSecondsOrYear(new Date(task.start_time))}`;
+                    link.textContent = label;
                     listItem.appendChild(link);
                     tasksList.appendChild(listItem);
+                }
+
+                serverTasks.forEach(task => {
+                    addItem(`complete-task.html?id=${task.id}`,
+                        `${task.job_name} - Started: ${formatDateWithoutSecondsOrYear(new Date(task.start_time))}`);
+                });
+
+                offlineTasks.forEach(task => {
+                    addItem(`complete-task.html?uuid=${encodeURIComponent(task.uuid)}`,
+                        `${task.job_name} - Started: ${formatDateWithoutSecondsOrYear(new Date(task.start_time))} (saved offline)`);
                 });
             }
 

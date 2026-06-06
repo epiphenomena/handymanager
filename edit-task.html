@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Task - HandyManager</title>
-    <link rel="stylesheet" href="css/styles.css?v=1.4">
+    <link rel="stylesheet" href="css/styles.css?v=2.0">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4CAF50">
     <style>
@@ -161,7 +161,10 @@ Materials:
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('Error loading task. Please try again.');
+                alert(navigator.onLine
+                    ? 'Error loading task. Please try again.'
+                    : 'Editing past tasks needs a connection. Your queued work will still sync.');
+                window.location.href = './';
             });
 
             // Handle form submission

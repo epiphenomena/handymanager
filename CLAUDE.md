@@ -26,7 +26,13 @@ gotchas that aren't obvious from the code.
   manual migration step. Status values are TEXT, so new statuses don't
   need a migration.
 - **The tech pages stay dead simple.** Big buttons, native inputs, inline
-  JS, no frameworks. The admin side uses htmx; the tech side does not.
+  JS (plus the shared js/offline.js), no frameworks. The admin side uses
+  htmx; the tech side does not.
+- **Offline model:** writes queue in localStorage (js/offline.js) and
+  replay FIFO with `queued: true`; queued creates carry a `client_uuid`
+  (unique-indexed) so replays are idempotent, and offline-created tasks
+  are referenced by `task_uuid` until synced. `queued: true` bypasses the
+  closed-job check by design — keep the lockdown for live submissions.
 
 ## Gotchas learned the hard way
 

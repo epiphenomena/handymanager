@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>New Task - HandyManager</title>
-    <link rel="stylesheet" href="css/styles.css?v=1.4">
+    <link rel="stylesheet" href="css/styles.css?v=2.0">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4CAF50">
     <style>
@@ -90,6 +90,7 @@
         </main>
     </div>
 
+    <script src="js/offline.js?v=1"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const newTaskForm = document.getElementById('new-task-form');
@@ -131,13 +132,17 @@
             .then(data => {
                 if (data.success && data.jobs) {
                     openJobs = data.jobs;
+                    hmOffline.cacheSet('open_jobs', data.jobs);
                 } else {
                     alert('Error loading jobs: ' + (data.message || 'unknown error'));
                 }
             })
-            .catch(error => {
-                console.error('Error fetching jobs:', error);
-                alert('Error loading jobs. Please try again.');
+            .catch(() => {
+                // Offline: use the job list from the last online visit
+                openJobs = hmOffline.cacheGet('open_jobs') || [];
+                if (openJobs.length === 0) {
+                    alert('Offline and no saved job list yet. Connect once to load the open jobs.');
+                }
             });
 
             function filterJobs(query) {
@@ -276,15 +281,19 @@
                 const startTime = document.getElementById('start-time').value;
                 const startDateTime = `${startDate} ${startTime}`;
 
+                const selectedJob = openJobs.find(job => job.id === selectedJobId);
+                const payload = {
+                    tech_name: techName.trim(),
+                    job_id: selectedJobId,
+                    start_time: startDateTime,
+                    client_uuid: hmOffline.uuid(),       // makes retries safe
+                    job_name: selectedJob ? selectedJob.name : '' // for offline display
+                };
+
                 fetch('create-task.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        token: token,
-                        tech_name: techName.trim(),
-                        job_id: selectedJobId,
-                        start_time: startDateTime
-                    })
+                    body: JSON.stringify(Object.assign({ token: token }, payload))
                 })
                 .then(response => response.json())
                 .then(data => {
@@ -294,9 +303,10 @@
                         alert('Error starting task: ' + data.message);
                     }
                 })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Error starting task. Please try again.');
+                .catch(() => {
+                    // Offline: queue it - it syncs on the next connection
+                    hmOffline.enqueue('create-task.php', payload);
+                    window.location.href = './';
                 });
             });
         });

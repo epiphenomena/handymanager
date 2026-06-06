@@ -43,6 +43,7 @@ function initDatabase() {
 
     $migrations = [
         1 => 'migration1_jobs_and_tasks',
+        2 => 'migration2_task_client_uuid',
     ];
 
     foreach ($migrations as $target => $fn) {
@@ -162,6 +163,13 @@ function migration1_jobs_and_tasks($pdo) {
     }
 }
 
+// Migration 2: client-generated UUID on tasks so offline replays are
+// idempotent (a queued create retried after a lost response can't duplicate).
+function migration2_task_client_uuid($pdo) {
+    $pdo->exec("ALTER TABLE tasks ADD COLUMN client_uuid TEXT");
+    $pdo->exec("CREATE UNIQUE INDEX idx_tasks_client_uuid ON tasks(client_uuid) WHERE client_uuid IS NOT NULL");
+}
+
 // ---------------------------------------------------------------------------
 // Jobs
 // ---------------------------------------------------------------------------
@@ -197,7 +205,7 @@ function getJobsByStatus(array $statuses) {
     $stmt = $pdo->prepare("
         SELECT j.*,
                COUNT(t.id) AS task_count,
-               SUM(CASE WHEN t.end_time IS NULL THEN 1 ELSE 0 END) AS open_task_count,
+               SUM(CASE WHEN t.id IS NOT NULL AND t.end_time IS NULL THEN 1 ELSE 0 END) AS open_task_count,
                SUM((julianday(t.end_time) - julianday(t.start_time)) * 24.0) AS total_hours,
                MAX(COALESCE(t.end_time, t.start_time)) AS last_activity
         FROM jobs j
@@ -362,22 +370,35 @@ function getCallSuggestions() {
 // ---------------------------------------------------------------------------
 
 // Start a new task on a job. Returns [taskId|false, message].
-function createTask($jobId, $techName, $startTime) {
+// $clientUuid makes the call idempotent (offline replay can retry safely).
+// $allowClosed accepts the task into a closed job - used for work queued
+// offline before the job was marked ready for billing; admin cleans up later.
+function createTask($jobId, $techName, $startTime, $clientUuid = null, $allowClosed = false) {
+    $pdo = getDbConnection();
+
+    // Replayed request that already succeeded? Return the existing task.
+    if ($clientUuid !== null) {
+        $existing = getTaskByClientUuid($clientUuid);
+        if ($existing) {
+            return [(int)$existing['id'], 'Task already synced'];
+        }
+    }
+
     $job = getJobById($jobId);
-    if (!jobAcceptsTasks($job)) {
+    if (!$job || (!$allowClosed && !jobAcceptsTasks($job))) {
         return [false, 'That job is not open for new tasks'];
     }
 
-    $pdo = getDbConnection();
     $stmt = $pdo->prepare("
-        INSERT INTO tasks (job_id, created_at, tech_name, start_time)
-        VALUES (:job_id, :created_at, :tech_name, :start_time)
+        INSERT INTO tasks (job_id, created_at, tech_name, start_time, client_uuid)
+        VALUES (:job_id, :created_at, :tech_name, :start_time, :client_uuid)
     ");
     $stmt->execute([
         'job_id' => $jobId,
         'created_at' => now(),
         'tech_name' => trim($techName),
         'start_time' => $startTime,
+        'client_uuid' => $clientUuid,
     ]);
     $taskId = (int)$pdo->lastInsertId();
 
@@ -387,6 +408,19 @@ function createTask($jobId, $techName, $startTime) {
     }
 
     return [$taskId, 'Task started'];
+}
+
+// Look up a task by its client-generated UUID (offline-created tasks are
+// referenced by UUID because the client never saw the server id)
+function getTaskByClientUuid($clientUuid) {
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("
+        SELECT t.*, j.name AS job_name, j.is_system AS job_is_system
+        FROM tasks t JOIN jobs j ON j.id = t.job_id
+        WHERE t.client_uuid = :uuid
+    ");
+    $stmt->execute(['uuid' => $clientUuid]);
+    return $stmt->fetch() ?: null;
 }
 
 function getTaskById($taskId) {

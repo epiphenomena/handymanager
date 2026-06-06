@@ -33,7 +33,18 @@ them through billing.
   accepted (enforced server-side too — `create-task.php` only accepts the id
   of a job that is open to tasks).
 - `complete-task.html` — end time + notes, closes the task.
-- `edit-task.html` — fix times/notes on the tech's own tasks.
+- `edit-task.html` — fix times/notes on the tech's own tasks (online only).
+
+The tech pages work **offline**: the service worker keeps the app shell
+cached (network-first, so updates always win when online), reads fall back
+to the last data fetched online, and writes made offline are queued in
+localStorage (`js/offline.js`) and replayed in order on the next page
+load / reconnect / app foreground. Queued creates carry a client UUID so a
+replay can never duplicate a task, and completions of offline-created
+tasks reference that UUID. If a job was closed while a tech was offline,
+the queued task is accepted into the closed job anyway (`queued: true`) —
+the admin cleans up afterwards if needed. An orange banner shows offline
+state and pending sync count.
 
 Tech JSON endpoints (all POST, token verified on every request):
 `get-open-jobs.php`, `create-task.php`, `get-tasks.php`,
@@ -87,10 +98,15 @@ days). Three layers handle this:
 1. `.htaccess` sets `Cache-Control: no-cache, must-revalidate` on
    html/css/js/manifest so browsers revalidate every load (ETag/304 keeps
    unchanged files cheap).
-2. The service worker fetches all GETs with `cache: 'no-store'` (only the
-   static icons are cache-first) and never intercepts POSTs.
-3. Page JS is inline in the html files; css links carry a `?v=` param as a
-   belt-and-suspenders fallback.
+2. The service worker fetches all GETs with `cache: 'no-store'` and never
+   intercepts POSTs. App-shell files are network-first (offline fallback
+   only); icons are cache-first.
+3. The SW uses `skipWaiting` + `clients.claim`, the page calls
+   `registration.update()` on every open, and reloads once on
+   `controllerchange` — so existing PWA installs pick up a deploy on their
+   next open.
+4. Page JS is inline (or `?v=`-versioned like `js/offline.js` and the css)
+   as a belt-and-suspenders fallback.
 
 ### Schema & migrations
 
@@ -103,7 +119,8 @@ schema change, append a numbered migration in `initDatabase()`.
 ```
 jobs:  id, name, customer_name, phone, call_notes, admin_notes,
        status, is_system, opened_at, ready_for_billing_at, billed_at, paid_at
-tasks: id, job_id, created_at, tech_name, start_time, end_time, notes, closed_at
+tasks: id, job_id, created_at, tech_name, start_time, end_time, notes,
+       closed_at, client_uuid
 ```
 
 ## Development & testing

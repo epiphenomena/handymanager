@@ -177,6 +177,30 @@ OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' 
 OUT=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}")
 check "resumed job visible to techs again" 'Nguyen' "$OUT"
 
+# --- Jobs with zero tasks must not show a "running" count ---
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=active')
+if [[ "$OUT" == *'0 tasks ('* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - zero-task job shows no running count"
+else
+    PASS=$((PASS+1)); echo "ok   - zero-task job shows no running count"
+fi
+
+# --- Offline replay: queued tasks are accepted into closed jobs, idempotently ---
+UUID="test-uuid-$RANDOM"
+# JOB3 (Lee) was marked ready_for_billing earlier; a live submit must fail...
+OUT=$(post create-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\",\"job_id\":$JOB3_ID,\"start_time\":\"2026-06-06 15:00\",\"client_uuid\":\"$UUID\"}")
+check "live submit to closed job still rejected" 'not open for new tasks' "$OUT"
+# ...but a queued (offline) replay is accepted
+OUT=$(post create-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\",\"job_id\":$JOB3_ID,\"start_time\":\"2026-06-06 15:00\",\"client_uuid\":\"$UUID\",\"queued\":true}")
+check "queued task accepted into closed job" '"success":true' "$OUT"
+QTASK_ID=$(echo "$OUT" | php -r 'echo json_decode(stream_get_contents(STDIN),true)["task_id"];')
+# Replaying the same uuid must not duplicate
+OUT=$(post create-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\",\"job_id\":$JOB3_ID,\"start_time\":\"2026-06-06 15:00\",\"client_uuid\":\"$UUID\",\"queued\":true}")
+check "replayed uuid is idempotent" "\"task_id\":$QTASK_ID" "$OUT"
+# Completing by uuid (offline-created tasks have no server id on the client)
+OUT=$(post complete-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\",\"task_uuid\":\"$UUID\",\"end_time\":\"2026-06-06 16:00\",\"notes\":\"synced from offline queue\",\"queued\":true}")
+check "complete by client uuid" '"success":true' "$OUT"
+
 # --- Job and report exports ---
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-job-json' --data-urlencode "id=$JOB_ID")
 check "job JSON export has tasks" '"tasks"' "$OUT"
