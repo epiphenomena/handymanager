@@ -10,8 +10,9 @@
 define('DB_FILE', getenv('HANDYMANAGER_DB') ?: __DIR__ . '/handymanager.db');
 
 // Job statuses
-const JOB_STATUSES = ['open', 'in_progress', 'ready_for_billing', 'billed', 'paid'];
-// Statuses that accept new tasks (and appear in the tech autocomplete)
+const JOB_STATUSES = ['open', 'in_progress', 'on_hold', 'ready_for_billing', 'billed', 'paid'];
+// Statuses that accept new tasks (and appear in the tech autocomplete).
+// on_hold is deliberately excluded: it hides the job from techs without closing it.
 const JOB_ACTIVE_STATUSES = ['open', 'in_progress'];
 
 // Initialize database connection
@@ -293,8 +294,8 @@ function setJobStatus($jobId, $status) {
             $reached = true;
         }
     }
-    if (!$reached && in_array($status, JOB_ACTIVE_STATUSES, true)) {
-        // Reopening: clear all completion timestamps
+    if (!$reached && in_array($status, ['open', 'in_progress', 'on_hold'], true)) {
+        // Reopening (or holding): clear all completion timestamps
         $sets[] = "ready_for_billing_at = NULL";
         $sets[] = "billed_at = NULL";
         $sets[] = "paid_at = NULL";
@@ -314,32 +315,46 @@ function deleteJob($jobId) {
 }
 
 // Known customers and locations for the call-log autocomplete.
-// Locations are derived from job names ("Customer - Location").
+// Customers carry their most recent location and phone so the form can
+// prefill them. Locations are derived from job names ("Customer - Location").
 function getCallSuggestions() {
     $pdo = getDbConnection();
-    $rows = $pdo->query("SELECT name, customer_name FROM jobs WHERE is_system = 0")->fetchAll();
+    $rows = $pdo->query("
+        SELECT name, customer_name, phone FROM jobs
+        WHERE is_system = 0 ORDER BY opened_at
+    ")->fetchAll();
     $customers = [];
     $locations = [];
     foreach ($rows as $row) {
         $customer = trim($row['customer_name'] ?? '');
         $name = trim($row['name']);
         if ($customer !== '') {
-            $customers[$customer] = true;
+            $location = '';
             $prefix = $customer . ' - ';
             if (strpos($name, $prefix) === 0) {
                 $location = trim(substr($name, strlen($prefix)));
-                if ($location !== '') {
-                    $locations[$location] = true;
-                }
+            }
+            // Rows are oldest-first, so later jobs overwrite: latest details win
+            $key = mb_strtolower($customer);
+            $customers[$key] = [
+                'name' => $customer,
+                'location' => $location ?: ($customers[$key]['location'] ?? ''),
+                'phone' => trim($row['phone'] ?? '') ?: ($customers[$key]['phone'] ?? ''),
+            ];
+            if ($location !== '') {
+                $locations[$location] = true;
             }
         } else {
             // Legacy migrated jobs: the whole name is the location
             $locations[$name] = true;
         }
     }
-    ksort($customers, SORT_NATURAL | SORT_FLAG_CASE);
+    $customers = array_values($customers);
+    usort($customers, function ($a, $b) {
+        return strnatcasecmp($a['name'], $b['name']);
+    });
     ksort($locations, SORT_NATURAL | SORT_FLAG_CASE);
-    return ['customers' => array_keys($customers), 'locations' => array_keys($locations)];
+    return ['customers' => $customers, 'locations' => array_keys($locations)];
 }
 
 // ---------------------------------------------------------------------------

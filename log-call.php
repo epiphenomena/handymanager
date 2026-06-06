@@ -190,6 +190,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Fill the datalists with known customers/locations. Suggestions only -
         // new (freeform) entries are always allowed.
+        let customersByName = {};
+
         function loadSuggestions() {
             fetch('log-call.php', {
                 method: 'POST',
@@ -202,20 +204,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             .then(response => response.json())
             .then(data => {
                 if (!data.success) return;
-                const fill = (listId, values) => {
-                    const list = document.getElementById(listId);
-                    list.innerHTML = '';
-                    (values || []).forEach(value => {
-                        const option = document.createElement('option');
-                        option.value = value;
-                        list.appendChild(option);
-                    });
-                };
-                fill('customer-list', data.customers);
-                fill('location-list', data.locations);
+
+                customersByName = {};
+                const customerList = document.getElementById('customer-list');
+                customerList.innerHTML = '';
+                (data.customers || []).forEach(customer => {
+                    customersByName[customer.name.toLowerCase()] = customer;
+                    const option = document.createElement('option');
+                    option.value = customer.name;
+                    customerList.appendChild(option);
+                });
+
+                const locationList = document.getElementById('location-list');
+                locationList.innerHTML = '';
+                (data.locations || []).forEach(value => {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    locationList.appendChild(option);
+                });
             })
             .catch(error => console.error('Error loading suggestions:', error));
         }
+
+        // When a known customer is picked, prefill their last location and
+        // phone - but never overwrite something typed by hand.
+        const customerInput = document.getElementById('customer-name');
+        const locationInput = document.getElementById('location');
+        const phoneInput = document.getElementById('phone');
+
+        function maybePrefill(input, value) {
+            if (!value) return;
+            if (input.value.trim() === '' || input.dataset.autofilled === '1') {
+                input.value = value;
+                input.dataset.autofilled = '1';
+            }
+        }
+
+        customerInput.addEventListener('input', function() {
+            const known = customersByName[this.value.trim().toLowerCase()];
+            if (known) {
+                maybePrefill(locationInput, known.location);
+                maybePrefill(phoneInput, known.phone);
+            }
+        });
+
+        // Hand-typed edits stop future autofill overwrites
+        [locationInput, phoneInput].forEach(input => {
+            input.addEventListener('input', function(e) {
+                if (e.isTrusted) delete this.dataset.autofilled;
+            });
+        });
 
         tokenForm.addEventListener('submit', function(e) {
             e.preventDefault();

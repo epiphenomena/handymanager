@@ -127,10 +127,11 @@ check "admin can add end time to task" 'Task updated' "$OUT"
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$JOB2_ID" --data-urlencode 'status=ready_for_billing')
 check "ready-for-billing works after end time set" 'Ready for Billing' "$OUT"
 
-# --- Call-log autocomplete suggestions ---
+# --- Call-log autocomplete suggestions (with prefill data) ---
 OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"action\":\"suggestions\"}")
 check "suggestions include customer" 'Patel' "$OUT"
 check "suggestions include location" '7 Birch Ct' "$OUT"
+check "suggestions carry phone for prefill" '555-0103' "$OUT"
 
 # --- Admin can add a task directly (work reported outside the tech app) ---
 OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Lee\",\"location\":\"9 Pine Rd\"}")
@@ -151,6 +152,45 @@ OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' 
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=add-task' --data-urlencode "id=$JOB3_ID" \
     --data-urlencode 'tech_name=Tim' --data-urlencode 'start_date=2026-06-06' --data-urlencode 'start_time=14:00')
 check "closed job rejects admin add-task" 'not open for new tasks' "$OUT"
+
+# --- On hold hides the job from techs without closing it ---
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Nguyen\",\"location\":\"5 Cedar Ln\"}")
+JOB4_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Nguyen")!==false) { echo $j["id"]; break; }')
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$JOB4_ID" --data-urlencode 'status=on_hold')
+check "job can be put on hold" 'On Hold' "$OUT"
+
+OUT=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}")
+if [[ "$OUT" == *'Nguyen'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - on-hold job hidden from tech autocomplete"
+else
+    PASS=$((PASS+1)); echo "ok   - on-hold job hidden from tech autocomplete"
+fi
+
+OUT=$(post create-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\",\"job_id\":$JOB4_ID,\"start_time\":\"2026-06-06 09:00\"}")
+check "on-hold job rejects new tasks" 'not open for new tasks' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=active')
+check "on-hold job shows in active group" 'Nguyen' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$JOB4_ID" --data-urlencode 'status=open')
+OUT=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}")
+check "resumed job visible to techs again" 'Nguyen' "$OUT"
+
+# --- Job and report exports ---
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-job-json' --data-urlencode "id=$JOB_ID")
+check "job JSON export has tasks" '"tasks"' "$OUT"
+check "job JSON export has summary" '"total_hours"' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-job-md' --data-urlencode "id=$JOB_ID")
+check "job markdown export" '# Smith - 412 Oak Ave' "$OUT"
+check "job markdown has task log" '## Task Log' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-months-csv')
+check "months CSV export" 'Month,"Jobs Completed"' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-month-csv' --data-urlencode "month=$(date +%Y-%m)")
+check "month detail CSV export" 'Job,Customer,Phone,Status' "$OUT"
 
 # --- Reports ---
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-reports')

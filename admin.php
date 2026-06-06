@@ -10,13 +10,14 @@ require_once __DIR__ . '/config.php';
 const STATUS_LABELS = [
     'open' => 'Open',
     'in_progress' => 'In Progress',
+    'on_hold' => 'On Hold',
     'ready_for_billing' => 'Ready for Billing',
     'billed' => 'Billed',
     'paid' => 'Paid',
 ];
 
 const STATUS_GROUPS = [
-    'active' => ['open', 'in_progress'],
+    'active' => ['open', 'in_progress', 'on_hold'],
     'billing' => ['ready_for_billing', 'billed'],
     'paid' => ['paid'],
 ];
@@ -168,6 +169,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exportTechCsv($_POST['tech'] ?? '', $_POST['month'] ?? date('Y-m'));
             break;
 
+        case 'export-months-csv':
+            exportMonthsCsv();
+            break;
+
+        case 'export-month-csv':
+            exportMonthCsv($_POST['month'] ?? '');
+            break;
+
+        case 'export-job-json':
+            exportJobJson((int)$_POST['id']);
+            break;
+
+        case 'export-job-md':
+            exportJobMarkdown((int)$_POST['id']);
+            break;
+
         default:
             http_response_code(400);
             echo '<div class="flash flash-error">Unknown action</div>';
@@ -218,7 +235,7 @@ function flash($message, $isError = false) {
 function renderJobsView($group) {
     $statuses = STATUS_GROUPS[$group] ?? STATUS_GROUPS['active'];
     $jobs = getJobsByStatus($statuses);
-    $titles = ['active' => 'Open & In Progress', 'billing' => 'Ready for Billing & Billed', 'paid' => 'Paid'];
+    $titles = ['active' => 'Active Jobs (Open / In Progress / On Hold)', 'billing' => 'Ready for Billing & Billed', 'paid' => 'Paid'];
     ?>
     <div class="view-header">
         <h2><?= h($titles[$group] ?? 'Jobs') ?></h2>
@@ -274,13 +291,32 @@ function renderAdminNotes($job, $justSaved = false) {
 
 function renderStatusActions($job) {
     $transitions = [
-        'open' => [['ready_for_billing', 'Mark Ready for Billing', 'btn-primary']],
-        'in_progress' => [['ready_for_billing', 'Mark Ready for Billing', 'btn-primary']],
+        'open' => [
+            ['ready_for_billing', 'Mark Ready for Billing', 'btn-primary'],
+            ['on_hold', 'Put On Hold', 'btn-ghost'],
+        ],
+        'in_progress' => [
+            ['ready_for_billing', 'Mark Ready for Billing', 'btn-primary'],
+            ['on_hold', 'Put On Hold', 'btn-ghost'],
+        ],
+        'on_hold' => [
+            // resume target is decided below: open if no tasks yet, else in progress
+            ['in_progress', 'Resume Job', 'btn-primary'],
+            ['ready_for_billing', 'Mark Ready for Billing', 'btn-ghost'],
+        ],
         'ready_for_billing' => [['billed', 'Mark Billed', 'btn-primary'], ['in_progress', 'Reopen Job', 'btn-ghost']],
         'billed' => [['paid', 'Mark Paid', 'btn-primary'], ['ready_for_billing', 'Back to Ready for Billing', 'btn-ghost']],
         'paid' => [['billed', 'Back to Billed', 'btn-ghost']],
     ];
-    foreach ($transitions[$job['status']] ?? [] as $t) {
+    $buttons = $transitions[$job['status']] ?? [];
+    if ($job['status'] === 'on_hold') {
+        $stmt = getDbConnection()->prepare("SELECT COUNT(*) FROM tasks WHERE job_id = :id");
+        $stmt->execute(['id' => $job['id']]);
+        if ((int)$stmt->fetchColumn() === 0) {
+            $buttons[0][0] = 'open';
+        }
+    }
+    foreach ($buttons as $t) {
         list($status, $label, $class) = $t;
         ?>
         <button class="btn <?= $class ?> btn-sm" hx-post="admin.php" hx-target="#content"
@@ -321,6 +357,18 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
             <?php renderStatusActions($job); ?>
             <button class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#content"
                 hx-vals='{"action":"job-edit-form","id":<?= (int)$job['id'] ?>}'>Edit Details</button>
+            <form method="post" action="admin.php" class="inline-form">
+                <input type="hidden" name="action" value="export-job-json">
+                <input type="hidden" name="token" value="">
+                <input type="hidden" name="id" value="<?= (int)$job['id'] ?>">
+                <button type="submit" class="btn btn-ghost btn-sm">JSON ↓</button>
+            </form>
+            <form method="post" action="admin.php" class="inline-form">
+                <input type="hidden" name="action" value="export-job-md">
+                <input type="hidden" name="token" value="">
+                <input type="hidden" name="id" value="<?= (int)$job['id'] ?>">
+                <button type="submit" class="btn btn-ghost btn-sm">Markdown ↓</button>
+            </form>
         </div>
     </div>
 
@@ -555,7 +603,16 @@ function renderReports() {
     <div class="view-header"><h2>Reports</h2></div>
 
     <div class="panel">
-        <div class="panel-title"><label>Jobs Completed per Month</label></div>
+        <div class="panel-title">
+            <label>Jobs Completed per Month</label>
+            <?php if (!empty($months)): ?>
+            <form method="post" action="admin.php" class="inline-form">
+                <input type="hidden" name="action" value="export-months-csv">
+                <input type="hidden" name="token" value="">
+                <button type="submit" class="btn btn-ghost btn-xs">CSV ↓</button>
+            </form>
+            <?php endif; ?>
+        </div>
         <?php if (empty($months)): ?>
             <p class="empty-state">No completed jobs yet. Jobs appear here once marked ready for billing.</p>
         <?php else: ?>
@@ -612,7 +669,14 @@ function renderMonthDetail($month) {
     }
     $jobs = reportJobsForMonth($month);
     ?>
-    <h4>Jobs completed in <?= h(fmtMonth($month)) ?></h4>
+    <h4>Jobs completed in <?= h(fmtMonth($month)) ?>
+        <form method="post" action="admin.php" class="inline-form">
+            <input type="hidden" name="action" value="export-month-csv">
+            <input type="hidden" name="token" value="">
+            <input type="hidden" name="month" value="<?= h($month) ?>">
+            <button type="submit" class="btn btn-ghost btn-xs">CSV ↓</button>
+        </form>
+    </h4>
     <table class="report-table">
         <thead><tr><th>Job</th><th>Status</th><th>Completed</th><th>Tasks</th><th>Hours</th></tr></thead>
         <tbody>
@@ -669,6 +733,148 @@ function renderTechReport($tech, $month) {
         <button type="submit" class="btn btn-ghost btn-sm">Export CSV</button>
     </form>
     <?php
+}
+
+function csvFilename($base) {
+    return preg_replace('/[^A-Za-z0-9_.-]+/', '_', $base);
+}
+
+// Monthly jobs-completed summary as CSV
+function exportMonthsCsv() {
+    $months = reportJobsPerMonth();
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="jobs-per-month.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['Month', 'Jobs Completed', 'Ready for Billing', 'Billed', 'Paid', 'Hours']);
+    foreach ($months as $m) {
+        fputcsv($out, [
+            $m['month'], $m['job_count'], $m['ready_count'], $m['billed_count'], $m['paid_count'],
+            $m['total_hours'] !== null ? round((float)$m['total_hours'], 2) : '',
+        ]);
+    }
+    fclose($out);
+}
+
+// Jobs completed in one month as CSV
+function exportMonthCsv($month) {
+    if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+        http_response_code(400);
+        echo 'Invalid month';
+        return;
+    }
+    $jobs = reportJobsForMonth($month);
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="jobs-' . $month . '.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['Job', 'Customer', 'Phone', 'Status', 'Opened', 'Ready for Billing', 'Tasks', 'Hours']);
+    foreach ($jobs as $job) {
+        fputcsv($out, [
+            $job['name'], $job['customer_name'], $job['phone'], STATUS_LABELS[$job['status']] ?? $job['status'],
+            $job['opened_at'], $job['ready_for_billing_at'], $job['task_count'],
+            $job['total_hours'] !== null ? round((float)$job['total_hours'], 2) : '',
+        ]);
+    }
+    fclose($out);
+}
+
+// Full job export: structured data for feeding to an AI or other tools
+function jobExportData($jobId) {
+    $job = getJobById($jobId);
+    if (!$job) {
+        return null;
+    }
+    $tasks = getTasksForJob($jobId);
+    $totalHours = 0;
+    foreach ($tasks as $task) {
+        $totalHours += (float)($task['hours'] ?? 0);
+    }
+    return [
+        'job' => [
+            'id' => (int)$job['id'],
+            'name' => $job['name'],
+            'status' => $job['status'],
+            'status_label' => STATUS_LABELS[$job['status']] ?? $job['status'],
+            'customer_name' => $job['customer_name'],
+            'phone' => $job['phone'],
+            'call_notes' => $job['call_notes'],
+            'admin_notes' => $job['admin_notes'],
+            'opened_at' => $job['opened_at'],
+            'ready_for_billing_at' => $job['ready_for_billing_at'],
+            'billed_at' => $job['billed_at'],
+            'paid_at' => $job['paid_at'],
+        ],
+        'tasks' => array_map(function ($task) {
+            return [
+                'tech_name' => $task['tech_name'],
+                'start_time' => $task['start_time'],
+                'end_time' => $task['end_time'],
+                'hours' => $task['hours'] !== null ? round((float)$task['hours'], 2) : null,
+                'notes' => $task['notes'],
+            ];
+        }, $tasks),
+        'summary' => [
+            'task_count' => count($tasks),
+            'total_hours' => round($totalHours, 2),
+        ],
+    ];
+}
+
+function exportJobJson($jobId) {
+    $data = jobExportData($jobId);
+    if (!$data) {
+        http_response_code(404);
+        echo 'Job not found';
+        return;
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . csvFilename('job-' . $jobId . '-' . $data['job']['name']) . '.json"');
+    echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+}
+
+function exportJobMarkdown($jobId) {
+    $data = jobExportData($jobId);
+    if (!$data) {
+        http_response_code(404);
+        echo 'Job not found';
+        return;
+    }
+    $job = $data['job'];
+
+    $md = "# {$job['name']}\n\n";
+    $md .= "- **Status:** {$job['status_label']}\n";
+    if ($job['customer_name']) $md .= "- **Customer:** {$job['customer_name']}\n";
+    if ($job['phone']) $md .= "- **Phone:** {$job['phone']}\n";
+    $md .= "- **Opened:** " . fmtDt($job['opened_at']) . "\n";
+    if ($job['ready_for_billing_at']) $md .= "- **Ready for billing:** " . fmtDate($job['ready_for_billing_at']) . "\n";
+    if ($job['billed_at']) $md .= "- **Billed:** " . fmtDate($job['billed_at']) . "\n";
+    if ($job['paid_at']) $md .= "- **Paid:** " . fmtDate($job['paid_at']) . "\n";
+    $md .= "- **Work:** {$data['summary']['task_count']} task(s), {$data['summary']['total_hours']} hours\n";
+
+    if ($job['call_notes']) {
+        $md .= "\n## Call Notes\n\n{$job['call_notes']}\n";
+    }
+    if ($job['admin_notes']) {
+        $md .= "\n## Job Notes\n\n{$job['admin_notes']}\n";
+    }
+
+    $md .= "\n## Task Log\n";
+    if (empty($data['tasks'])) {
+        $md .= "\n_No tasks recorded._\n";
+    }
+    foreach ($data['tasks'] as $task) {
+        $when = fmtDt($task['start_time']);
+        $when .= $task['end_time']
+            ? ' → ' . fmtDt($task['end_time']) . " ({$task['hours']} h)"
+            : ' — in progress';
+        $md .= "\n### {$task['tech_name']} — $when\n";
+        if ($task['notes']) {
+            $md .= "\n{$task['notes']}\n";
+        }
+    }
+
+    header('Content-Type: text/markdown; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . csvFilename('job-' . $jobId . '-' . $job['name']) . '.md"');
+    echo $md;
 }
 
 function exportTechCsv($tech, $month) {
@@ -851,6 +1057,7 @@ function exportTechCsv($tech, $month) {
 
         .badge-open { background: #dbeafe; color: #1e40af; }
         .badge-in_progress { background: #fef3c7; color: #92400e; }
+        .badge-on_hold { background: #e5e7eb; color: #374151; }
         .badge-ready_for_billing { background: #ede9fe; color: #5b21b6; }
         .badge-billed { background: #cffafe; color: #155e75; }
         .badge-paid { background: #dcfce7; color: #166534; }
@@ -1013,6 +1220,7 @@ function exportTechCsv($tech, $month) {
 
         .report-controls label { max-width: 240px; }
         .csv-form { margin-top: 10px; }
+        .inline-form { display: inline-block; margin: 0; }
 
         /* Flash messages */
         .flash {

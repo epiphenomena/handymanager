@@ -8,3 +8,15 @@
 <FilesMatch "\.(backup|bak)([-.].*)?$">
     Require all denied
 </FilesMatch>
+
+# Force revalidation on every load so deployed updates appear immediately.
+# "no-cache" still allows conditional requests (ETag/304), so unchanged files
+# stay cheap - but a deploy is picked up on the very next page load.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(html|css|js|webmanifest)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+    <FilesMatch "^manifest\.json$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>

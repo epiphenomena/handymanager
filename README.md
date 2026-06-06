@@ -9,7 +9,9 @@ them through billing.
 - **Job** — a unit of customer work. Opened when the office logs a service
   call, identified by a name built from the customer name + location
   (e.g. `Smith - 412 Oak Ave`). A job moves through statuses:
-  `open → in progress → ready for billing → billed → paid`.
+  `open → in progress → ready for billing → billed → paid`, plus an
+  **on hold** status that hides the job from the tech picker (and blocks
+  new tasks) without closing it.
   Once marked **ready for billing** a job is closed to new tasks and
   disappears from the tech job picker. A repeat customer at the same
   location gets a *new* job opened after the previous one closed.
@@ -17,6 +19,8 @@ them through billing.
   picker for shop/non-job time.
 - **Task** — a single tech work entry (start, stop, notes) belonging to a
   job. What used to be called a "job" in the old schema is now a task.
+  A task is "in progress" when it has no end time; any task without an
+  end time blocks marking its job ready for billing.
 
 ## Architecture
 
@@ -42,16 +46,26 @@ Server-rendered PHP + [htmx](https://htmx.org). `GET` serves the page shell;
 every data interaction is a `POST` returning an HTML fragment, with the admin
 token (kept in localStorage) attached and verified on **every** request.
 
-- **Active / Billing / Paid** — jobs grouped by status. Cards show status,
-  task counts, hours, and the admin job notes.
+- **Active / Billing / Paid** — jobs grouped by status (active includes
+  open, in progress, and on hold). Cards show status, task counts, hours,
+  and the admin job notes.
 - **Job detail** — timeline of the opening call and every task; editable job
   notes; status transition buttons (ready for billing / billed / paid, plus
-  reopen); edit job details; edit/delete tasks; delete job.
-- **Log Call** — the form the administrative assistant uses to open a job:
-  customer name, location (together they become the official job name),
-  phone, call notes.
+  on hold and reopen); edit job details; add tasks directly (for work a tech
+  reported outside the app); edit/delete tasks; delete job; export the whole
+  job as JSON (for feeding to an AI) or formatted Markdown.
+- **Log Call** — opens a job: customer name, location (together they become
+  the official job name), phone, call notes. Customer/location autocomplete
+  from past jobs (freeform allowed); picking a known customer prefills
+  their last location and phone.
 - **Reports** — jobs completed per month (with status breakdown, hours and a
-  per-month drill-down) and tasks per tech per month with CSV export.
+  per-month drill-down) and tasks per tech per month. All exportable as CSV.
+
+### Standalone call log — `log-call.php`
+
+A simplified single-purpose page for the administrative assistant: token
+gate on first visit, then just the call form. Same autocomplete/prefill
+behavior as the admin Log Call tab.
 
 ### Backend
 
@@ -62,6 +76,21 @@ Hand-written vanilla PHP, no dependencies, SQLite storage.
 
 Two tokens in `config.json`: `VALID_TOKEN` (techs) and `ADMIN_TOKEN`
 (office/admin). Token checks are the only security and run on every request.
+`config.json` is gitignored, excluded from deploys, and blocked from web
+access by `.htaccess` (as are the `*.db` files, which live in the web root).
+
+### Caching
+
+Deployed updates must show up immediately (techs keep the PWA open for
+days). Three layers handle this:
+
+1. `.htaccess` sets `Cache-Control: no-cache, must-revalidate` on
+   html/css/js/manifest so browsers revalidate every load (ETag/304 keeps
+   unchanged files cheap).
+2. The service worker fetches all GETs with `cache: 'no-store'` (only the
+   static icons are cache-first) and never intercepts POSTs.
+3. Page JS is inline in the html files; css links carry a `?v=` param as a
+   belt-and-suspenders fallback.
 
 ### Schema & migrations
 
