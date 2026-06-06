@@ -1,333 +1,501 @@
 <?php
 // database.php - SQLite database operations
+//
+// Terminology:
+//   job  - a unit of customer work, opened by an admin call and closed when
+//          marked ready for billing. Identified by a name (customer/location).
+//   task - a single tech work entry (start, stop, notes) belonging to a job.
 
-// Database file path
-define('DB_FILE', __DIR__ . '/handymanager.db');
+// Database file path (override with HANDYMANAGER_DB env var for testing)
+define('DB_FILE', getenv('HANDYMANAGER_DB') ?: __DIR__ . '/handymanager.db');
+
+// Job statuses
+const JOB_STATUSES = ['open', 'in_progress', 'ready_for_billing', 'billed', 'paid'];
+// Statuses that accept new tasks (and appear in the tech autocomplete)
+const JOB_ACTIVE_STATUSES = ['open', 'in_progress'];
 
 // Initialize database connection
 function getDbConnection() {
-    try {
+    static $pdo = null;
+    if ($pdo === null) {
         $pdo = new PDO('sqlite:' . DB_FILE);
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-        return $pdo;
-    } catch (PDOException $e) {
-        error_log("Database connection failed: " . $e->getMessage());
-        throw $e;
+        $pdo->exec('PRAGMA foreign_keys = ON');
+    }
+    return $pdo;
+}
+
+function now() {
+    return date('Y-m-d H:i:s');
+}
+
+// ---------------------------------------------------------------------------
+// Schema migrations
+// ---------------------------------------------------------------------------
+// Versioned via PRAGMA user_version. Each migration runs once, in order,
+// inside a transaction. Add new migrations at the end with the next number.
+
+function initDatabase() {
+    $pdo = getDbConnection();
+    $version = (int)$pdo->query('PRAGMA user_version')->fetchColumn();
+
+    $migrations = [
+        1 => 'migration1_jobs_and_tasks',
+    ];
+
+    foreach ($migrations as $target => $fn) {
+        if ($version < $target) {
+            $pdo->beginTransaction();
+            try {
+                $fn($pdo);
+                $pdo->exec("PRAGMA user_version = $target");
+                $pdo->commit();
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                error_log("Migration $target failed: " . $e->getMessage());
+                throw $e;
+            }
+            $version = $target;
+        }
     }
 }
 
-// Initialize database schema
-function initDatabase() {
-    $pdo = getDbConnection();
+// Migration 1: split the legacy single "jobs" table into jobs + tasks.
+function migration1_jobs_and_tasks($pdo) {
+    // Is there a legacy table to migrate? (fresh installs have nothing)
+    $hasLegacy = false;
+    $row = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='jobs'")->fetch();
+    if ($row) {
+        // Old schema had a "location" column directly on jobs
+        $cols = $pdo->query("PRAGMA table_info(jobs)")->fetchAll();
+        foreach ($cols as $col) {
+            if ($col['name'] === 'location') {
+                $hasLegacy = true;
+                break;
+            }
+        }
+    }
 
-    $sql = "
-        CREATE TABLE IF NOT EXISTS jobs (
+    if ($hasLegacy) {
+        $pdo->exec("ALTER TABLE jobs RENAME TO legacy_jobs");
+    }
+
+    $pdo->exec("
+        CREATE TABLE jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,                          -- official job name (customer / location)
+            customer_name TEXT,
+            phone TEXT,
+            call_notes TEXT,                             -- notes from the opening call
+            admin_notes TEXT,                            -- ongoing admin notes / progress tracking
+            status TEXT NOT NULL DEFAULT 'open',         -- open|in_progress|ready_for_billing|billed|paid
+            is_system INTEGER NOT NULL DEFAULT 0,        -- 1 for the permanent Clock in/out job
+            opened_at TEXT NOT NULL,
+            ready_for_billing_at TEXT,
+            billed_at TEXT,
+            paid_at TEXT
+        )
+    ");
+
+    $pdo->exec("
+        CREATE TABLE tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
             created_at TEXT NOT NULL,
             tech_name TEXT NOT NULL,
             start_time TEXT NOT NULL,
-            location TEXT NOT NULL,
             end_time TEXT,
             notes TEXT,
             closed_at TEXT
-        );
-    ";
-
-    $pdo->exec($sql);
-}
-
-// Function to get all in-progress jobs for a tech (where closed_at is null)
-function getInProgressJobs($techName) {
-    $pdo = getDbConnection();
-
-    $stmt = $pdo->prepare("
-        SELECT id, start_time, location
-        FROM jobs
-        WHERE tech_name = :tech_name AND closed_at IS NULL
-        ORDER BY start_time DESC
+        )
     ");
 
+    $pdo->exec("CREATE INDEX idx_tasks_job_id ON tasks(job_id)");
+    $pdo->exec("CREATE INDEX idx_tasks_tech_name ON tasks(tech_name)");
+    $pdo->exec("CREATE INDEX idx_jobs_status ON jobs(status)");
+
+    // Permanent system job for clocking in/out (never closes, hidden from job lists)
+    $pdo->prepare("INSERT INTO jobs (name, status, is_system, opened_at) VALUES ('Clock in/out', 'open', 1, :now)")
+        ->execute(['now' => now()]);
+
+    if ($hasLegacy) {
+        // Group legacy entries by location: each distinct location becomes one job,
+        // and every legacy entry becomes a task under it.
+        $locations = $pdo->query("
+            SELECT TRIM(location) AS loc, MIN(created_at) AS first_created
+            FROM legacy_jobs
+            GROUP BY TRIM(location)
+            ORDER BY first_created
+        ")->fetchAll();
+
+        $insertJob = $pdo->prepare("
+            INSERT INTO jobs (name, status, opened_at) VALUES (:name, 'in_progress', :opened_at)
+        ");
+        $insertTask = $pdo->prepare("
+            INSERT INTO tasks (job_id, created_at, tech_name, start_time, end_time, notes, closed_at)
+            VALUES (:job_id, :created_at, :tech_name, :start_time, :end_time, :notes, :closed_at)
+        ");
+
+        foreach ($locations as $location) {
+            $insertJob->execute([
+                'name' => $location['loc'],
+                'opened_at' => $location['first_created'] ?: now(),
+            ]);
+            $jobId = $pdo->lastInsertId();
+
+            $stmt = $pdo->prepare("SELECT * FROM legacy_jobs WHERE TRIM(location) = :loc ORDER BY start_time");
+            $stmt->execute(['loc' => $location['loc']]);
+            foreach ($stmt->fetchAll() as $entry) {
+                $insertTask->execute([
+                    'job_id' => $jobId,
+                    'created_at' => $entry['created_at'],
+                    'tech_name' => trim($entry['tech_name']),
+                    'start_time' => $entry['start_time'],
+                    'end_time' => $entry['end_time'],
+                    'notes' => $entry['notes'],
+                    'closed_at' => $entry['closed_at'],
+                ]);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+
+// Open a new job from a service call
+function createJob($name, $customerName, $phone, $callNotes) {
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("
+        INSERT INTO jobs (name, customer_name, phone, call_notes, status, opened_at)
+        VALUES (:name, :customer_name, :phone, :call_notes, 'open', :opened_at)
+    ");
+    $stmt->execute([
+        'name' => trim($name),
+        'customer_name' => trim($customerName ?? '') ?: null,
+        'phone' => trim($phone ?? '') ?: null,
+        'call_notes' => trim($callNotes ?? '') ?: null,
+        'opened_at' => now(),
+    ]);
+    return (int)$pdo->lastInsertId();
+}
+
+function getJobById($jobId) {
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("SELECT * FROM jobs WHERE id = :id");
+    $stmt->execute(['id' => $jobId]);
+    return $stmt->fetch() ?: null;
+}
+
+// Jobs (non-system) in the given statuses, with task aggregates
+function getJobsByStatus(array $statuses) {
+    $pdo = getDbConnection();
+    $placeholders = implode(',', array_fill(0, count($statuses), '?'));
+    $stmt = $pdo->prepare("
+        SELECT j.*,
+               COUNT(t.id) AS task_count,
+               SUM(CASE WHEN t.closed_at IS NULL THEN 1 ELSE 0 END) AS open_task_count,
+               SUM((julianday(t.end_time) - julianday(t.start_time)) * 24.0) AS total_hours,
+               MAX(COALESCE(t.end_time, t.start_time)) AS last_activity
+        FROM jobs j
+        LEFT JOIN tasks t ON t.job_id = j.id
+        WHERE j.is_system = 0 AND j.status IN ($placeholders)
+        GROUP BY j.id
+        ORDER BY COALESCE(MAX(COALESCE(t.end_time, t.start_time)), j.opened_at) DESC
+    ");
+    $stmt->execute(array_values($statuses));
+    return $stmt->fetchAll();
+}
+
+// Jobs a tech may log tasks against: open/in-progress jobs plus the system job
+function getOpenJobsForTech() {
+    $pdo = getDbConnection();
+    $placeholders = implode(',', array_fill(0, count(JOB_ACTIVE_STATUSES), '?'));
+    $stmt = $pdo->prepare("
+        SELECT j.id, j.name, j.is_system
+        FROM jobs j
+        WHERE j.is_system = 1 OR j.status IN ($placeholders)
+        ORDER BY j.is_system DESC,
+                 (SELECT MAX(t.start_time) FROM tasks t WHERE t.job_id = j.id) DESC,
+                 j.opened_at DESC
+    ");
+    $stmt->execute(array_values(JOB_ACTIVE_STATUSES));
+    return $stmt->fetchAll();
+}
+
+// True if the job can accept new tasks
+function jobAcceptsTasks($job) {
+    return $job && ($job['is_system'] || in_array($job['status'], JOB_ACTIVE_STATUSES, true));
+}
+
+// Update editable job fields (admin)
+function updateJobFields($jobId, array $fields) {
+    $allowed = ['name', 'customer_name', 'phone', 'call_notes', 'admin_notes'];
+    $setClauses = [];
+    $params = ['id' => $jobId];
+    foreach ($allowed as $field) {
+        if (array_key_exists($field, $fields)) {
+            $setClauses[] = "$field = :$field";
+            $params[$field] = trim($fields[$field] ?? '') ?: null;
+        }
+    }
+    if (empty($setClauses)) {
+        return false;
+    }
+    // Job name is required
+    if (array_key_exists('name', $params) && $params['name'] === null) {
+        return false;
+    }
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("UPDATE jobs SET " . implode(', ', $setClauses) . " WHERE id = :id AND is_system = 0");
+    return $stmt->execute($params);
+}
+
+// Transition a job to a new status, maintaining the status timestamps.
+// Returns [bool success, string message].
+function setJobStatus($jobId, $status) {
+    if (!in_array($status, JOB_STATUSES, true)) {
+        return [false, 'Invalid status'];
+    }
+    $job = getJobById($jobId);
+    if (!$job || $job['is_system']) {
+        return [false, 'Job not found'];
+    }
+
+    // Closing to new tasks requires all tasks to be finished
+    if ($status === 'ready_for_billing') {
+        $pdo = getDbConnection();
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tasks WHERE job_id = :id AND closed_at IS NULL");
+        $stmt->execute(['id' => $jobId]);
+        if ((int)$stmt->fetchColumn() > 0) {
+            return [false, 'This job has tasks still in progress'];
+        }
+    }
+
+    // Set the timestamp for the new status (if not already set) and clear
+    // timestamps for any later statuses (handles moving backwards).
+    $order = ['ready_for_billing' => 'ready_for_billing_at', 'billed' => 'billed_at', 'paid' => 'paid_at'];
+    $sets = ['status = :status'];
+    $params = ['status' => $status, 'id' => $jobId];
+    $reached = false;
+    foreach ($order as $st => $col) {
+        if ($reached) {
+            $sets[] = "$col = NULL";
+        } elseif ($st === $status) {
+            $sets[] = "$col = COALESCE($col, :now)";
+            $params['now'] = now();
+            $reached = true;
+        }
+    }
+    if (!$reached && in_array($status, JOB_ACTIVE_STATUSES, true)) {
+        // Reopening: clear all completion timestamps
+        $sets[] = "ready_for_billing_at = NULL";
+        $sets[] = "billed_at = NULL";
+        $sets[] = "paid_at = NULL";
+    }
+
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("UPDATE jobs SET " . implode(', ', $sets) . " WHERE id = :id");
+    $stmt->execute($params);
+    return [true, 'Status updated'];
+}
+
+// Delete a job and all of its tasks
+function deleteJob($jobId) {
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("DELETE FROM jobs WHERE id = :id AND is_system = 0");
+    return $stmt->execute(['id' => $jobId]);
+}
+
+// ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+
+// Start a new task on a job. Returns [taskId|false, message].
+function createTask($jobId, $techName, $startTime) {
+    $job = getJobById($jobId);
+    if (!jobAcceptsTasks($job)) {
+        return [false, 'That job is not open for new tasks'];
+    }
+
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("
+        INSERT INTO tasks (job_id, created_at, tech_name, start_time)
+        VALUES (:job_id, :created_at, :tech_name, :start_time)
+    ");
+    $stmt->execute([
+        'job_id' => $jobId,
+        'created_at' => now(),
+        'tech_name' => trim($techName),
+        'start_time' => $startTime,
+    ]);
+    $taskId = (int)$pdo->lastInsertId();
+
+    // First task moves an open job to in progress
+    if (!$job['is_system'] && $job['status'] === 'open') {
+        $pdo->prepare("UPDATE jobs SET status = 'in_progress' WHERE id = :id")->execute(['id' => $jobId]);
+    }
+
+    return [$taskId, 'Task started'];
+}
+
+function getTaskById($taskId) {
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("
+        SELECT t.*, j.name AS job_name, j.is_system AS job_is_system
+        FROM tasks t JOIN jobs j ON j.id = t.job_id
+        WHERE t.id = :id
+    ");
+    $stmt->execute(['id' => $taskId]);
+    return $stmt->fetch() ?: null;
+}
+
+// In-progress (not yet completed) tasks for a tech
+function getInProgressTasks($techName) {
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("
+        SELECT t.id, t.start_time, j.name AS job_name
+        FROM tasks t JOIN jobs j ON j.id = t.job_id
+        WHERE t.tech_name = :tech_name AND t.closed_at IS NULL
+        ORDER BY t.start_time DESC
+    ");
     $stmt->execute(['tech_name' => $techName]);
     return $stmt->fetchAll();
 }
 
-// Function to get the latest 10 jobs for a tech (including in-progress jobs)
-function getLatestJobs($techName, $limit = 20) {
+// Latest tasks for a tech (history view)
+function getLatestTasks($techName, $limit = 20) {
     $pdo = getDbConnection();
-
     $stmt = $pdo->prepare("
-        SELECT id, start_time, end_time, location, notes
-        FROM jobs
-        WHERE tech_name = :tech_name
+        SELECT t.id, t.start_time, t.end_time, t.notes, j.name AS job_name
+        FROM tasks t JOIN jobs j ON j.id = t.job_id
+        WHERE t.tech_name = :tech_name
         ORDER BY
-        CASE WHEN end_time IS NULL THEN 0 ELSE 1 END,  -- Jobs without end_time first
-            CASE
-                WHEN end_time IS NULL THEN start_time  -- Sort jobs without end_time by start_time
-                ELSE end_time  -- Sort jobs with end_time by end_time
-            END DESC
+            CASE WHEN t.end_time IS NULL THEN 0 ELSE 1 END,
+            COALESCE(t.end_time, t.start_time) DESC
         LIMIT :limit
     ");
-
     $stmt->bindValue(':tech_name', $techName, PDO::PARAM_STR);
     $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
     $stmt->execute();
-
     return $stmt->fetchAll();
 }
 
-// Function to get a job by ID
-function getJobById($jobId) {
+// Complete/close a task
+function completeTask($taskId, $endTime, $notes) {
     $pdo = getDbConnection();
-
     $stmt = $pdo->prepare("
-        SELECT id, tech_name, start_time, end_time, location, notes
-        FROM jobs
-        WHERE id = :job_id
+        UPDATE tasks
+        SET end_time = :end_time, notes = :notes, closed_at = :closed_at
+        WHERE id = :id
     ");
-
-    $stmt->execute(['job_id' => $jobId]);
-    return $stmt->fetch();
-}
-
-// Function to update a job
-function updateJob($jobId, $startTime, $endTime, $location, $notes) {
-    $pdo = getDbConnection();
-
-    $stmt = $pdo->prepare("
-        UPDATE jobs
-        SET start_time = :start_time, end_time = :end_time, location = :location, notes = :notes
-        WHERE id = :job_id
-    ");
-
     return $stmt->execute([
-        'start_time' => $startTime,
         'end_time' => $endTime,
-        'location' => trim($location),
-        'notes' => $notes,
-        'job_id' => $jobId
+        'notes' => $notes !== null ? trim($notes) : null,
+        'closed_at' => now(),
+        'id' => $taskId,
     ]);
 }
 
-// Function to partially update a job (only specific fields)
-function updateJobPartial($jobId, $location = null, $notes = null, $start_time = null, $end_time = null, $tech_name = null) {
-    $pdo = getDbConnection();
-
+// Partially update a task (only provided fields)
+function updateTaskPartial($taskId, $fields) {
+    $allowed = ['start_time', 'end_time', 'notes', 'tech_name'];
     $setClauses = [];
-    $params = ['job_id' => $jobId];
-
-    if ($location !== null) {
-        $setClauses[] = "location = :location";
-        $params['location'] = trim($location);
+    $params = ['id' => $taskId];
+    foreach ($allowed as $field) {
+        if (array_key_exists($field, $fields) && $fields[$field] !== null) {
+            $setClauses[] = "$field = :$field";
+            $params[$field] = is_string($fields[$field]) && $field !== 'notes'
+                ? trim($fields[$field]) : $fields[$field];
+        }
     }
-
-    if ($notes !== null) {
-        $setClauses[] = "notes = :notes";
-        $params['notes'] = $notes;
-    }
-
-    if ($start_time !== null) {
-        $setClauses[] = "start_time = :start_time";
-        $params['start_time'] = $start_time;
-    }
-
-    if ($end_time !== null) {
-        $setClauses[] = "end_time = :end_time";
-        $params['end_time'] = $end_time;
-    }
-
-    if ($tech_name !== null) {
-        $setClauses[] = "tech_name = :tech_name";
-        $params['tech_name'] = trim($tech_name);
-    }
-
     if (empty($setClauses)) {
-        return false; // Nothing to update
+        return false;
     }
-
-    $sql = "UPDATE jobs SET " . implode(", ", $setClauses) . " WHERE id = :job_id";
-    $stmt = $pdo->prepare($sql);
-
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("UPDATE tasks SET " . implode(', ', $setClauses) . " WHERE id = :id");
     return $stmt->execute($params);
 }
 
-// Function to create a new job
-function createJob($techName, $startTime, $location) {
+function deleteTask($taskId) {
     $pdo = getDbConnection();
-
-    $stmt = $pdo->prepare("
-        INSERT INTO jobs (created_at, tech_name, start_time, location)
-        VALUES (:created_at, :tech_name, :start_time, :location)
-    ");
-
-    return $stmt->execute([
-        'created_at' => date('Y-m-d H:i:s'),
-        'tech_name' => trim($techName),
-        'start_time' => $startTime,
-        'location' => trim($location)
-    ]);
+    return $pdo->prepare("DELETE FROM tasks WHERE id = :id")->execute(['id' => $taskId]);
 }
 
-// Function to complete/close a job
-function completeJob($jobId, $endTime, $notes) {
+// All tasks for a job, oldest first (job timeline)
+function getTasksForJob($jobId) {
     $pdo = getDbConnection();
-
     $stmt = $pdo->prepare("
-        UPDATE jobs
-        SET end_time = :end_time, notes = :notes, closed_at = :closed_at
-        WHERE id = :job_id
+        SELECT *, (julianday(end_time) - julianday(start_time)) * 24.0 AS hours
+        FROM tasks
+        WHERE job_id = :job_id
+        ORDER BY start_time
     ");
-
-    return $stmt->execute([
-        'end_time' => $endTime,
-        'notes' => trim($notes),
-        'closed_at' => date('Y-m-d H:i:s'),
-        'job_id' => $jobId
-    ]);
-}
-
-// Function to get all jobs with filtering and sorting
-function getAllJobs($filters = []) {
-    $pdo = getDbConnection();
-
-    $whereClause = "";
-    $params = [];
-
-    // Apply filters if provided
-    if (!empty($filters)) {
-        $whereConditions = [];
-
-        if (!empty($filters['date_from'])) {
-            $whereConditions[] = "DATE(start_time) >= :date_from";
-            $params['date_from'] = $filters['date_from'];
-        }
-
-        if (!empty($filters['date_to'])) {
-            $whereConditions[] = "DATE(start_time) <= :date_to";
-            $params['date_to'] = $filters['date_to'];
-        }
-
-        if (!empty($filters['tech'])) {
-            $whereConditions[] = "tech_name = :tech";
-            $params['tech'] = trim($filters['tech']);
-        }
-
-        if (!empty($filters['location'])) {
-            if (is_array($filters['location'])) {
-                // Handle multiple locations filter
-                $locationPlaceholders = [];
-                foreach ($filters['location'] as $index => $location) {
-                    $locationPlaceholders[] = ":location_$index";
-                    $params["location_$index"] = trim($location);
-                }
-                $whereConditions[] = "location IN (" . implode(',', $locationPlaceholders) . ")";
-            } else {
-                // Handle single location filter
-                $whereConditions[] = "location = :location";
-                $params['location'] = trim($filters['location']);
-            }
-        }
-
-        if (!empty($whereConditions)) {
-            $whereClause = "WHERE " . implode(" AND ", $whereConditions);
-        }
-    }
-
-    // Sort by:
-    // 1. Jobs without end_time at the top
-    // 2. Then jobs with end_time, newest first
-    // 3. For jobs without end_time, sort by start_time, newest first
-    $sql = "
-        SELECT id, start_time, end_time, tech_name, location, notes
-        FROM jobs
-        $whereClause
-        ORDER BY
-            CASE WHEN end_time IS NULL THEN 0 ELSE 1 END,  -- Jobs without end_time first
-            CASE
-                WHEN end_time IS NULL THEN start_time  -- Sort jobs without end_time by start_time
-                ELSE end_time  -- Sort jobs with end_time by end_time
-            END DESC
-    ";
-
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
+    $stmt->execute(['job_id' => $jobId]);
     return $stmt->fetchAll();
 }
 
-// Function to get unique techs and locations for filter dropdowns
-function getFilterOptions() {
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+
+// Jobs completed (reached ready for billing) per month, with status breakdown
+function reportJobsPerMonth() {
     $pdo = getDbConnection();
-
-    // Get unique techs
-    $stmt = $pdo->query("SELECT DISTINCT tech_name FROM jobs WHERE tech_name IS NOT NULL ORDER BY tech_name");
-    $techs = array_map('trim', $stmt->fetchAll(PDO::FETCH_COLUMN));
-
-    // Get unique locations
-    $stmt = $pdo->query("SELECT DISTINCT location FROM jobs WHERE location IS NOT NULL ORDER BY location");
-    $locations = array_map('trim', $stmt->fetchAll(PDO::FETCH_COLUMN));
-
-    return ['techs' => $techs, 'locations' => $locations];
+    return $pdo->query("
+        SELECT month,
+               COUNT(*) AS job_count,
+               SUM(CASE WHEN status = 'ready_for_billing' THEN 1 ELSE 0 END) AS ready_count,
+               SUM(CASE WHEN status = 'billed' THEN 1 ELSE 0 END) AS billed_count,
+               SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid_count,
+               SUM(hours) AS total_hours
+        FROM (
+            SELECT j.id, j.status,
+                   strftime('%Y-%m', j.ready_for_billing_at) AS month,
+                   (SELECT SUM((julianday(t.end_time) - julianday(t.start_time)) * 24.0)
+                    FROM tasks t WHERE t.job_id = j.id) AS hours
+            FROM jobs j
+            WHERE j.is_system = 0 AND j.ready_for_billing_at IS NOT NULL
+        )
+        GROUP BY month
+        ORDER BY month DESC
+    ")->fetchAll();
 }
 
-// Function to delete a job by ID
-function deleteJob($jobId) {
+// Jobs completed in a given month ('YYYY-MM')
+function reportJobsForMonth($month) {
     $pdo = getDbConnection();
-
     $stmt = $pdo->prepare("
-        DELETE FROM jobs
-        WHERE id = :job_id
+        SELECT j.*,
+               (SELECT COUNT(*) FROM tasks t WHERE t.job_id = j.id) AS task_count,
+               (SELECT SUM((julianday(t.end_time) - julianday(t.start_time)) * 24.0)
+                FROM tasks t WHERE t.job_id = j.id) AS total_hours
+        FROM jobs j
+        WHERE j.is_system = 0 AND strftime('%Y-%m', j.ready_for_billing_at) = :month
+        ORDER BY j.ready_for_billing_at
     ");
-
-    return $stmt->execute(['job_id' => $jobId]);
+    $stmt->execute(['month' => $month]);
+    return $stmt->fetchAll();
 }
 
-// Function to migrate existing JSON data to SQLite (if needed)
-function migrateFromJson() {
-    $jsonFile = __DIR__ . '/handymanager-data.json';
-
-    if (!file_exists($jsonFile)) {
-        return;
-    }
-
-    $jsonData = json_decode(file_get_contents($jsonFile), true);
-
-    if (!$jsonData || !isset($jsonData['jobs']) || empty($jsonData['jobs'])) {
-        return;
-    }
-
+// All tech names that have logged tasks
+function getTechNames() {
     $pdo = getDbConnection();
-
-    // Begin transaction for better performance
-    $pdo->beginTransaction();
-
-    try {
-        $stmt = $pdo->prepare("
-            INSERT OR IGNORE INTO jobs
-            (id, created_at, tech_name, start_time, location, end_time, notes, closed_at)
-            VALUES (:id, :created_at, :tech_name, :start_time, :location, :end_time, :notes, :closed_at)
-        ");
-
-        foreach ($jsonData['jobs'] as $job) {
-            $stmt->execute([
-                'id' => $job['id'] ?? null,
-                'created_at' => $job['created_at'] ?? null,
-                'tech_name' => isset($job['tech_name']) ? trim($job['tech_name']) : null,
-                'start_time' => $job['start_time'] ?? null,
-                'location' => isset($job['location']) ? trim($job['location']) : null,
-                'end_time' => $job['end_time'] ?? null,
-                'notes' => isset($job['notes']) ? trim($job['notes']) : null,
-                'closed_at' => $job['closed_at'] ?? null
-            ]);
-        }
-
-        $pdo->commit();
-
-        // Optionally rename the old JSON file as backup
-        rename($jsonFile, $jsonFile . '.backup');
-    } catch (Exception $e) {
-        $pdo->rollback();
-        error_log("Migration failed: " . $e->getMessage());
-        throw $e;
-    }
+    return $pdo->query("SELECT DISTINCT tech_name FROM tasks ORDER BY tech_name")->fetchAll(PDO::FETCH_COLUMN);
 }
-?>
+
+// Tasks for a tech in a given month ('YYYY-MM'), with job names
+function reportTasksForTech($techName, $month) {
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("
+        SELECT t.*, j.name AS job_name, j.is_system AS job_is_system,
+               (julianday(t.end_time) - julianday(t.start_time)) * 24.0 AS hours
+        FROM tasks t JOIN jobs j ON j.id = t.job_id
+        WHERE t.tech_name = :tech_name AND strftime('%Y-%m', t.start_time) = :month
+        ORDER BY t.start_time
+    ");
+    $stmt->execute(['tech_name' => $techName, 'month' => $month]);
+    return $stmt->fetchAll();
+}

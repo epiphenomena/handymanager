@@ -1,52 +1,109 @@
 # handymanager
-A simple PWA + backend for capturing basic info from service tech visits
+
+A simple PWA + backend for running a small handyman service: techs log their
+work from their phones, the office opens jobs from service calls and tracks
+them through billing.
+
+## Terminology
+
+- **Job** — a unit of customer work. Opened when the office logs a service
+  call, identified by a name built from the customer name + location
+  (e.g. `Smith - 412 Oak Ave`). A job moves through statuses:
+  `open → in progress → ready for billing → billed → paid`.
+  Once marked **ready for billing** a job is closed to new tasks and
+  disappears from the tech job picker. A repeat customer at the same
+  location gets a *new* job opened after the previous one closed.
+  A permanent system job, **Clock in/out**, always appears in the tech
+  picker for shop/non-job time.
+- **Task** — a single tech work entry (start, stop, notes) belonging to a
+  job. What used to be called a "job" in the old schema is now a task.
 
 ## Architecture
 
-Consists of 2 parts:
+### Tech PWA (mobile, deliberately minimal)
 
-1) a simple PWA frontend. The front end only supports a few operations:
-   1) A settings page that allows saving a token and tech name to localstorage
-   2) default home page that POSTs the token and tech name to the backend, receives a list of In Progress jobs, if any, and shows:
-      1) a list of jobs that are "In Progress" (clicking on one opens the In Progress job page for that job) and
-      2) a button that starts a new job, opening the new job page and prefilling the start date and time with now
-      3) a button to open and edit the settings
-   3) a new job page that is a form with 3 fields:
-      1) the start date which is prefilled with today's date
-      2) the start time which is prefilled with the current time
-      3) the job location
-      4) and a submit button that POSTs those 3 fields and the token and tech name to the backend
-   4) an "In Progress" job page (open) that is a form with 4 fields:
-      1) The end date which is prefilled with today's date
-      2) The end time which is prefilled with the current time
-      3) Notes
-      4) a hidden job id provided by the backend
-      5) and a submit button that POSTs those 3 fields and the token and job id to the backend
-2) A php based backend that responds to the POST requests described above by
-   1) Matching the token to a hard coded token, if they don't match error
-   2) saving or reading from a SQLite database. The data structure has a single table of jobs with these properties:
-      1) required job id
-      2) required create datetime (created on insert by the backend)
-      3) required tech name
-      4) required start datetime
-      5) optional closed datetime (created when the end time and notes are inserted)
-      6) optional end datetime
-      7) optional notes
-      8) required location
+- `index.html` — settings (token + tech name in localStorage), list of the
+  tech's in-progress tasks, history with edit.
+- `new-task.html` — start a task. The job is picked from a **locked
+  autocomplete** of open jobs + Clock in/out; freeform locations are not
+  accepted (enforced server-side too — `create-task.php` only accepts the id
+  of a job that is open to tasks).
+- `complete-task.html` — end time + notes, closes the task.
+- `edit-task.html` — fix times/notes on the tech's own tasks.
 
-The frontend PWA is very simple, clear and clean. The frontend is intended to be used almost exclusively on mobile. The buttons are large. The form fields prefill or present native value appropriate controls (for example, native date and time selectors). The backend is clean handwritten vanilla php with no external dependencies.
+Tech JSON endpoints (all POST, token verified on every request):
+`get-open-jobs.php`, `create-task.php`, `get-tasks.php`,
+`get-latest-tasks.php`, `get-task.php`, `complete-task.php`,
+`update-task.php`.
 
-## Setup and Running
+### Admin dashboard — `admin.php`
 
-1. Clone the repository
-2. Navigate to the project directory
-3. Start the development server:
-   ```bash
-   php dev-server.php
-   ```
-   Or specify a port:
-   ```bash
-   php dev-server.php 8080
-   ```
-4. Open your browser to http://localhost:8000/ (or your chosen port)
-5. For the token, use the hardcoded value in `config.php` (default: "handyman")
+Server-rendered PHP + [htmx](https://htmx.org). `GET` serves the page shell;
+every data interaction is a `POST` returning an HTML fragment, with the admin
+token (kept in localStorage) attached and verified on **every** request.
+
+- **Active / Billing / Paid** — jobs grouped by status. Cards show status,
+  task counts, hours, and the admin job notes.
+- **Job detail** — timeline of the opening call and every task; editable job
+  notes; status transition buttons (ready for billing / billed / paid, plus
+  reopen); edit job details; edit/delete tasks; delete job.
+- **Log Call** — the form the administrative assistant uses to open a job:
+  customer name, location (together they become the official job name),
+  phone, call notes.
+- **Reports** — jobs completed per month (with status breakdown, hours and a
+  per-month drill-down) and tasks per tech per month with CSV export.
+
+### Backend
+
+Hand-written vanilla PHP, no dependencies, SQLite storage.
+
+- `config.php` — tokens (from `config.json`), auth + request helpers.
+- `database.php` — schema migrations and all queries.
+
+Two tokens in `config.json`: `VALID_TOKEN` (techs) and `ADMIN_TOKEN`
+(office/admin). Token checks are the only security and run on every request.
+
+### Schema & migrations
+
+`database.php` runs versioned migrations automatically on first request,
+tracked with `PRAGMA user_version`. Migration 1 splits the legacy single
+`jobs` table into `jobs` + `tasks` (the old table is preserved as
+`legacy_jobs`); each distinct legacy location becomes one job. To add a
+schema change, append a numbered migration in `initDatabase()`.
+
+```
+jobs:  id, name, customer_name, phone, call_notes, admin_notes,
+       status, is_system, opened_at, ready_for_billing_at, billed_at, paid_at
+tasks: id, job_id, created_at, tech_name, start_time, end_time, notes, closed_at
+```
+
+## Development & testing
+
+The database file can be overridden with the `HANDYMANAGER_DB` env var, so
+local testing never touches real data.
+
+```bash
+rake seed     # build handymanager-test.db with sample data
+rake dev      # dev server on :8000 using the test db
+rake test     # API smoke tests against a throwaway db (tools/smoke-test.sh)
+rake pulldb   # copy the PRODUCTION db down for local inspection
+              # (backs up any local copy first; never pushed back)
+```
+
+Or run against whatever db you like:
+
+```bash
+HANDYMANAGER_DB=some.db php dev-server.php 8080
+```
+
+Default tokens for local dev are in `config.json` (gitignored).
+
+## Deployment
+
+```bash
+rake sync
+```
+
+Deploys via rsync. `*.db` and `config.json` are excluded in both directions —
+production data and production tokens are never overwritten. The schema
+migration runs automatically on the first request after deploying.

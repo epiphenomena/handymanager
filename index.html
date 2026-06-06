@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HandyManager</title>
-    <link rel="stylesheet" href="css/styles.css?v=1.3">
+    <link rel="stylesheet" href="css/styles.css?v=1.4">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4CAF50">
 </head>
@@ -38,22 +38,22 @@
                 </div>
             </div>
 
-            <div id="jobs-section">
+            <div id="tasks-section">
                 <div class="header-controls">
-                    <h2>In Progress Jobs</h2>
+                    <h2>In Progress</h2>
                     <div class="button-group">
                         <button id="settings-btn" class="secondary-btn">Settings</button>
                         <button id="history-btn" class="secondary-btn">History</button>
                     </div>
                 </div>
-                <ul id="jobs-list"></ul>
-                <button id="new-job-btn" class="primary-btn">Start New Job</button>
+                <ul id="tasks-list"></ul>
+                <button id="new-task-btn" class="primary-btn">Start New Task</button>
             </div>
 
             <div id="history-section" style="display: none;">
                 <div class="header-controls">
-                    <h2>Job History</h2>
-                    <button id="back-to-jobs-btn" class="secondary-btn">Back</button>
+                    <h2>History</h2>
+                    <button id="back-to-tasks-btn" class="secondary-btn">Back</button>
                 </div>
                 <ul id="history-list"></ul>
             </div>
@@ -61,15 +61,10 @@
     </div>
 
     <script>
-        // main.js - Handles the main page functionality
-
         // Register service worker for PWA functionality
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
                 navigator.serviceWorker.register('/service-worker.js')
-                    .then(function(registration) {
-                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                    })
                     .catch(function(err) {
                         console.log('ServiceWorker registration failed: ', err);
                     });
@@ -79,27 +74,25 @@
         document.addEventListener('DOMContentLoaded', function() {
             const settingsForm = document.getElementById('settings-form');
             const settingsSection = document.getElementById('settings-section');
-            const jobsSection = document.getElementById('jobs-section');
+            const tasksSection = document.getElementById('tasks-section');
             const historySection = document.getElementById('history-section');
-            const jobsList = document.getElementById('jobs-list');
+            const tasksList = document.getElementById('tasks-list');
             const historyList = document.getElementById('history-list');
-            const newJobBtn = document.getElementById('new-job-btn');
+            const newTaskBtn = document.getElementById('new-task-btn');
             const settingsBtn = document.getElementById('settings-btn');
             const historyBtn = document.getElementById('history-btn');
-            const backToJobsBtn = document.getElementById('back-to-jobs-btn');
+            const backToTasksBtn = document.getElementById('back-to-tasks-btn');
 
             // Load saved settings
             const savedToken = localStorage.getItem('handymanager_token');
             const savedTechName = localStorage.getItem('handymanager_tech_name');
 
-            // Show settings section if either token or tech name is missing
             if (savedToken && savedTechName) {
                 document.getElementById('token').value = savedToken;
                 document.getElementById('tech-name').value = savedTechName;
-                showJobsSection();
-                loadJobs(savedToken, savedTechName);
+                showTasksSection();
+                loadTasks(savedToken, savedTechName);
             } else {
-                // Show settings section if either token or tech name is missing
                 showSettingsSection();
             }
 
@@ -109,7 +102,6 @@
                 const token = document.getElementById('token').value.trim();
                 const techName = document.getElementById('tech-name').value.trim();
 
-                // Validate that both fields are filled
                 if (!token || !techName) {
                     alert('Please fill in both token and tech name');
                     return;
@@ -118,26 +110,22 @@
                 localStorage.setItem('handymanager_token', token);
                 localStorage.setItem('handymanager_tech_name', techName);
 
-                showJobsSection();
-                loadJobs(token, techName);
+                showTasksSection();
+                loadTasks(token, techName);
             });
 
-            // Handle new job button click
-            newJobBtn.addEventListener('click', function() {
-                window.location.href = 'new-job.html';
+            newTaskBtn.addEventListener('click', function() {
+                window.location.href = 'new-task.html';
             });
 
-            // Handle settings button click
             settingsBtn.addEventListener('click', function() {
                 showSettingsSection();
             });
 
-            // Handle history button click
             historyBtn.addEventListener('click', function() {
                 const token = localStorage.getItem('handymanager_token');
                 const techName = localStorage.getItem('handymanager_tech_name');
 
-                // Validate that both fields are present
                 if (!token || !techName) {
                     showSettingsSection();
                     return;
@@ -147,28 +135,30 @@
                 loadHistory(token, techName);
             });
 
-            // Handle back to jobs button click
-            backToJobsBtn.addEventListener('click', function() {
-                showJobsSection();
+            backToTasksBtn.addEventListener('click', function() {
+                showTasksSection();
             });
 
-            // Show jobs section and hide others
-            function showJobsSection() {
+            function showTasksSection() {
                 settingsSection.style.display = 'none';
                 historySection.style.display = 'none';
-                jobsSection.style.display = 'block';
+                tasksSection.style.display = 'block';
             }
 
-            // Show settings section and hide others
             function showSettingsSection() {
-                jobsSection.style.display = 'none';
+                tasksSection.style.display = 'none';
                 historySection.style.display = 'none';
                 settingsSection.style.display = 'block';
             }
 
-            // Format date without seconds and year
+            function showHistorySection() {
+                tasksSection.style.display = 'none';
+                settingsSection.style.display = 'none';
+                historySection.style.display = 'block';
+            }
+
+            // Format date without seconds and year: MM/DD HH:MM (24-hour format)
             function formatDateWithoutSecondsOrYear(date) {
-                // Format: MM/DD HH:MM (24-hour format)
                 const month = String(date.getMonth() + 1).padStart(2, '0');
                 const day = String(date.getDate()).padStart(2, '0');
                 const hours = String(date.getHours()).padStart(2, '0');
@@ -176,55 +166,38 @@
                 return `${month}/${day} ${hours}:${minutes}`;
             }
 
-            // Show history section and hide others
-            function showHistorySection() {
-                jobsSection.style.display = 'none';
-                settingsSection.style.display = 'none';
-                historySection.style.display = 'block';
-            }
-
-            // Load jobs from backend
-            function loadJobs(token, techName) {
-                fetch('get-jobs.php', {
+            // Load in-progress tasks from backend
+            function loadTasks(token, techName) {
+                fetch('get-tasks.php', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        token: token,
-                        tech_name: techName
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: token, tech_name: techName })
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        displayJobs(data.jobs);
+                        displayTasks(data.tasks);
                     } else {
-                        alert('Error loading jobs: ' + data.message);
+                        alert('Error loading tasks: ' + data.message);
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Error loading jobs. Please try again.');
+                    alert('Error loading tasks. Please try again.');
                 });
             }
 
             // Load history from backend
             function loadHistory(token, techName) {
-                fetch('get-latest-jobs.php', {
+                fetch('get-latest-tasks.php', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        token: token,
-                        tech_name: techName
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: token, tech_name: techName })
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        displayHistory(data.jobs);
+                        displayHistory(data.tasks);
                     } else {
                         alert('Error loading history: ' + data.message);
                     }
@@ -235,75 +208,69 @@
                 });
             }
 
-            // Display jobs in the list
-            function displayJobs(jobs) {
-                jobsList.innerHTML = '';
+            // Display in-progress tasks in the list
+            function displayTasks(tasks) {
+                tasksList.innerHTML = '';
 
-                if (jobs.length === 0) {
-                    const noJobsItem = document.createElement('li');
-                    noJobsItem.textContent = 'No in-progress jobs';
-                    jobsList.appendChild(noJobsItem);
+                if (tasks.length === 0) {
+                    const noTasksItem = document.createElement('li');
+                    noTasksItem.textContent = 'No in-progress tasks';
+                    tasksList.appendChild(noTasksItem);
                     return;
                 }
 
-                jobs.forEach(job => {
+                tasks.forEach(task => {
                     const listItem = document.createElement('li');
                     const link = document.createElement('a');
-                    link.href = `job-details.html?id=${job.id}`;
+                    link.href = `complete-task.html?id=${task.id}`;
                     link.className = 'job-link';
-                    link.textContent = `${job.location} - Started: ${formatDateWithoutSecondsOrYear(new Date(job.start_time))}`;
+                    link.textContent = `${task.job_name} - Started: ${formatDateWithoutSecondsOrYear(new Date(task.start_time))}`;
                     listItem.appendChild(link);
-                    jobsList.appendChild(listItem);
+                    tasksList.appendChild(listItem);
                 });
             }
 
             // Display history in the list
-            function displayHistory(jobs) {
+            function displayHistory(tasks) {
                 historyList.innerHTML = '';
 
-                if (jobs.length === 0) {
-                    const noJobsItem = document.createElement('li');
-                    noJobsItem.textContent = 'No job history';
-                    historyList.appendChild(noJobsItem);
+                if (tasks.length === 0) {
+                    const noTasksItem = document.createElement('li');
+                    noTasksItem.textContent = 'No history';
+                    historyList.appendChild(noTasksItem);
                     return;
                 }
 
-                jobs.forEach(job => {
+                tasks.forEach(task => {
                     const listItem = document.createElement('li');
                     listItem.className = 'history-item';
 
-                    const jobInfo = document.createElement('div');
-                    jobInfo.className = 'job-info';
+                    const taskInfo = document.createElement('div');
+                    taskInfo.className = 'job-info';
 
-                    const location = document.createElement('div');
-                    location.className = 'job-location';
-                    location.textContent = job.location;
+                    const jobName = document.createElement('div');
+                    jobName.className = 'job-location';
+                    jobName.textContent = task.job_name;
 
                     const timeInfo = document.createElement('div');
                     timeInfo.className = 'job-time';
-                    const startTime = formatDateWithoutSecondsOrYear(new Date(job.start_time));
-                    const endTime = job.end_time ? formatDateWithoutSecondsOrYear(new Date(job.end_time)) : 'In Progress';
+                    const startTime = formatDateWithoutSecondsOrYear(new Date(task.start_time));
+                    const endTime = task.end_time ? formatDateWithoutSecondsOrYear(new Date(task.end_time)) : 'In Progress';
                     timeInfo.textContent = `Started: ${startTime} | Ended: ${endTime}`;
 
                     const editBtn = document.createElement('button');
                     editBtn.className = 'edit-btn';
                     editBtn.textContent = 'Edit';
                     editBtn.onclick = function() {
-                        editJob(job);
+                        window.location.href = `edit-task.html?id=${task.id}`;
                     };
 
-                    jobInfo.appendChild(location);
-                    jobInfo.appendChild(timeInfo);
-                    listItem.appendChild(jobInfo);
+                    taskInfo.appendChild(jobName);
+                    taskInfo.appendChild(timeInfo);
+                    listItem.appendChild(taskInfo);
                     listItem.appendChild(editBtn);
                     historyList.appendChild(listItem);
                 });
-            }
-
-            // Edit job function
-            function editJob(job) {
-                // Redirect to edit page with job ID
-                window.location.href = `edit-job.html?id=${job.id}`;
             }
         });
     </script>

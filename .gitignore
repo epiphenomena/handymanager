@@ -1,6 +1,7 @@
-# Database files
+# Database files (local copies of production data + test dbs + backups)
 *.db
 *.db-*
+*.db.backup-*
 
 # IDE files
 .vscode/

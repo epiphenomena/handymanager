@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Task - HandyManager</title>
+    <link rel="stylesheet" href="css/styles.css?v=1.4">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4CAF50">
+    <style>
+        .autocomplete-wrapper {
+            position: relative;
+        }
+
+        .autocomplete-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            max-height: 240px;
+            overflow-y: auto;
+            background-color: white;
+            border: 1px solid #ccc;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            display: none;
+        }
+
+        .autocomplete-suggestion {
+            padding: 14px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+
+        .autocomplete-suggestion:last-child {
+            border-bottom: none;
+        }
+
+        .autocomplete-suggestion:hover,
+        .autocomplete-suggestion.selected {
+            background-color: #e8f5e9;
+        }
+
+        .autocomplete-suggestion.no-match {
+            color: #999;
+            cursor: default;
+        }
+
+        #location.valid {
+            border-color: #4CAF50;
+            background-color: #f1f8f1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>HandyManager</h1>
+        </header>
+        <main>
+            <h2>New Task</h2>
+            <form id="new-task-form">
+                <div class="form-group">
+                    <label for="location">Job:</label>
+                    <div class="autocomplete-wrapper">
+                        <input type="text" id="location" placeholder="Tap to pick a job" autocomplete="off" required>
+                        <div id="location-suggestions" class="autocomplete-suggestions"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="start-date">Start Date:</label>
+                    <input type="date" id="start-date" required>
+                </div>
+                <div class="form-group">
+                    <label for="start-time">Start Time:</label>
+                    <input type="time" id="start-time" required>
+                </div>
+                <button type="submit" class="primary-btn">Start Task</button>
+            </form>
+            <button class="cancel-btn" onclick="window.location.href='./'">Cancel</button>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const newTaskForm = document.getElementById('new-task-form');
+            const locationInput = document.getElementById('location');
+            const locationSuggestions = document.getElementById('location-suggestions');
+
+            // Prefill start date and time with current date and time
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+
+            document.getElementById('start-date').value = `${year}-${month}-${day}`;
+            document.getElementById('start-time').value = `${hours}:${minutes}`;
+
+            const token = localStorage.getItem('handymanager_token');
+            const techName = localStorage.getItem('handymanager_tech_name');
+
+            if (!token || !techName) {
+                alert('Please set your token and tech name in settings first.');
+                window.location.href = './';
+                return;
+            }
+
+            // Open jobs the tech can pick from (includes "Clock in/out").
+            // The job must be picked from this list - freeform entry is not allowed.
+            let openJobs = [];
+            let selectedJobId = null;
+            let selectedIndex = -1;
+
+            fetch('get-open-jobs.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: token, tech_name: techName })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.jobs) {
+                    openJobs = data.jobs;
+                } else {
+                    alert('Error loading jobs: ' + (data.message || 'unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching jobs:', error);
+                alert('Error loading jobs. Please try again.');
+            });
+
+            function filterJobs(query) {
+                if (!query) return openJobs;
+                const q = query.toLowerCase();
+                return openJobs.filter(job => job.name.toLowerCase().includes(q));
+            }
+
+            function selectJob(job) {
+                selectedJobId = job.id;
+                locationInput.value = job.name;
+                locationInput.classList.add('valid');
+                locationSuggestions.style.display = 'none';
+                selectedIndex = -1;
+            }
+
+            function clearSelection() {
+                selectedJobId = null;
+                locationInput.classList.remove('valid');
+            }
+
+            function showSuggestions(jobs) {
+                locationSuggestions.innerHTML = '';
+                selectedIndex = -1;
+
+                if (jobs.length === 0) {
+                    const noMatch = document.createElement('div');
+                    noMatch.className = 'autocomplete-suggestion no-match';
+                    noMatch.textContent = 'No matching open jobs';
+                    locationSuggestions.appendChild(noMatch);
+                    locationSuggestions.style.display = 'block';
+                    return;
+                }
+
+                jobs.forEach(job => {
+                    const el = document.createElement('div');
+                    el.className = 'autocomplete-suggestion';
+                    el.textContent = job.name;
+                    // mousedown fires before the input's blur on mobile
+                    el.addEventListener('mousedown', function(e) {
+                        e.preventDefault();
+                        selectJob(job);
+                    });
+                    locationSuggestions.appendChild(el);
+                });
+
+                locationSuggestions.style.display = 'block';
+            }
+
+            function handleKeyNavigation(e) {
+                const suggestions = locationSuggestions.querySelectorAll('.autocomplete-suggestion:not(.no-match)');
+
+                switch (e.key) {
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        selectedIndex = Math.min(selectedIndex + 1, suggestions.length - 1);
+                        updateSelection(suggestions);
+                        break;
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        selectedIndex = Math.max(selectedIndex - 1, -1);
+                        updateSelection(suggestions);
+                        break;
+                    case 'Enter':
+                        if (selectedIndex >= 0 && suggestions.length > 0) {
+                            e.preventDefault();
+                            const visible = filterJobs(locationInput.value.trim());
+                            if (visible[selectedIndex]) {
+                                selectJob(visible[selectedIndex]);
+                            }
+                        }
+                        break;
+                    case 'Escape':
+                        locationSuggestions.style.display = 'none';
+                        selectedIndex = -1;
+                        break;
+                }
+            }
+
+            function updateSelection(suggestions) {
+                suggestions.forEach((suggestion, index) => {
+                    suggestion.classList.toggle('selected', index === selectedIndex);
+                });
+            }
+
+            // Show the full list on focus so techs can just tap a job
+            locationInput.addEventListener('focus', function() {
+                showSuggestions(filterJobs(this.value.trim()));
+            });
+
+            locationInput.addEventListener('input', function() {
+                clearSelection();
+                const query = this.value.trim();
+                const matches = filterJobs(query);
+                showSuggestions(matches);
+
+                // Auto-select an exact (case-insensitive) match
+                const exact = openJobs.find(job => job.name.toLowerCase() === query.toLowerCase());
+                if (exact) {
+                    selectedJobId = exact.id;
+                    locationInput.classList.add('valid');
+                }
+            });
+
+            locationInput.addEventListener('keydown', handleKeyNavigation);
+
+            // Hide suggestions when tapping outside
+            document.addEventListener('click', function(e) {
+                if (e.target !== locationInput && !locationSuggestions.contains(e.target)) {
+                    locationSuggestions.style.display = 'none';
+                    selectedIndex = -1;
+                }
+            });
+
+            // Handle form submission
+            newTaskForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                if (!selectedJobId) {
+                    alert('Please pick a job from the list. If the job is not listed, the office needs to open it first.');
+                    locationInput.focus();
+                    return;
+                }
+
+                const startDate = document.getElementById('start-date').value;
+                const startTime = document.getElementById('start-time').value;
+                const startDateTime = `${startDate} ${startTime}`;
+
+                fetch('create-task.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token: token,
+                        tech_name: techName.trim(),
+                        job_id: selectedJobId,
+                        start_time: startDateTime
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = './';
+                    } else {
+                        alert('Error starting task: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error starting task. Please try again.');
+                });
+            });
+        });
+    </script>
+</body>
+</html>

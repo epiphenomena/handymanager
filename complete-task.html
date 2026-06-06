@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Job Details - HandyManager</title>
-    <link rel="stylesheet" href="css/styles.css">
+    <title>Complete Task - HandyManager</title>
+    <link rel="stylesheet" href="css/styles.css?v=1.4">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4CAF50">
     <style>
@@ -45,8 +45,8 @@
             <h1>HandyManager</h1>
         </header>
         <main>
-            <h2>Complete Job</h2>
-            <form id="complete-job-form">
+            <h2>Complete Task</h2>
+            <form id="complete-task-form">
                 <div class="form-group">
                     <label for="notes">Notes:</label>
                     <textarea id="notes" placeholder="Notes:
@@ -55,7 +55,7 @@
 Materials:
 - "></textarea>
                 </div>
-                <input type="hidden" id="job-id">
+                <input type="hidden" id="task-id">
                 <div class="form-group">
                     <label for="end-date">End Date:</label>
                     <input type="date" id="end-date" required>
@@ -65,7 +65,7 @@ Materials:
                     <input type="time" id="end-time" required>
                 </div>
                 <div class="button-row">
-                    <button type="submit" class="primary-btn submit-btn">Complete Job</button>
+                    <button type="submit" class="primary-btn submit-btn">Complete Task</button>
                     <button type="button" class="cancel-btn" onclick="window.location.href='./'">Cancel</button>
                 </div>
             </form>
@@ -73,15 +73,13 @@ Materials:
     </div>
 
     <script>
-        // job-details.js - Handles the job details/complete job form
-
         document.addEventListener('DOMContentLoaded', function() {
-            const completeJobForm = document.getElementById('complete-job-form');
+            const completeTaskForm = document.getElementById('complete-task-form');
+            const notesField = document.getElementById('notes');
             const urlParams = new URLSearchParams(window.location.search);
-            const jobId = urlParams.get('id');
+            const taskId = urlParams.get('id');
 
-            // Set job ID in hidden field
-            document.getElementById('job-id').value = jobId;
+            document.getElementById('task-id').value = taskId;
 
             // Prefill end date and time with current date and time
             const now = new Date();
@@ -94,33 +92,35 @@ Materials:
             document.getElementById('end-date').value = `${year}-${month}-${day}`;
             document.getElementById('end-time').value = `${hours}:${minutes}`;
 
+            // Prefill notes with template if empty
+            if (!notesField.value.trim()) {
+                notesField.value = "Notes:\n- \n\nMaterials:\n- ";
+            }
+
             // Handle form submission
-            completeJobForm.addEventListener('submit', function(e) {
+            completeTaskForm.addEventListener('submit', function(e) {
                 e.preventDefault();
 
                 const token = localStorage.getItem('handymanager_token');
+                const techName = localStorage.getItem('handymanager_tech_name');
                 const endDate = document.getElementById('end-date').value;
                 const endTime = document.getElementById('end-time').value;
-                const notes = document.getElementById('notes').value; // Don't trim whitespace to preserve formatting
+                const notes = notesField.value; // Don't trim whitespace to preserve formatting
 
-                // Combine date and time
-                const endDateTime = `${endDate} ${endTime}`;
-
-                if (!token) {
-                    alert('Please set your token in settings first.');
+                if (!token || !techName) {
+                    alert('Please set your token and tech name in settings first.');
                     window.location.href = './';
                     return;
                 }
 
-                fetch('complete-job.php', {
+                fetch('complete-task.php', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         token: token,
-                        job_id: jobId,
-                        end_time: endDateTime,
+                        tech_name: techName,
+                        task_id: taskId,
+                        end_time: `${endDate} ${endTime}`,
                         notes: notes
                     })
                 })
@@ -129,69 +129,54 @@ Materials:
                     if (data.success) {
                         window.location.href = './';
                     } else {
-                        alert('Error completing job: ' + data.message);
+                        alert('Error completing task: ' + data.message);
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Error completing job. Please try again.');
+                    alert('Error completing task. Please try again.');
                 });
             });
-        });
 
-        // Handle auto-inserting "- " when pressing enter after a dash line
-        document.getElementById('notes').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                const cursorPosition = this.selectionStart;
-                const text = this.value;
-                const beforeCursor = text.substring(0, cursorPosition);
-                const lines = beforeCursor.split('\n');
-                const currentLine = lines[lines.length - 1];
+            // Handle auto-inserting "- " when pressing enter after a dash line
+            notesField.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    const cursorPosition = this.selectionStart;
+                    const text = this.value;
+                    const beforeCursor = text.substring(0, cursorPosition);
+                    const lines = beforeCursor.split('\n');
+                    const currentLine = lines[lines.length - 1];
 
-                // Check if current line starts with "- "
-                if (currentLine.trim().startsWith('-')) {
-                    e.preventDefault();
-                    const newValue = text.substring(0, cursorPosition) + '\n- ' + text.substring(cursorPosition);
-                    this.value = newValue;
-                    // Set cursor position after the inserted "- "
-                    this.setSelectionRange(cursorPosition + 3, cursorPosition + 3);
+                    if (currentLine.trim().startsWith('-')) {
+                        e.preventDefault();
+                        this.value = text.substring(0, cursorPosition) + '\n- ' + text.substring(cursorPosition);
+                        this.setSelectionRange(cursorPosition + 3, cursorPosition + 3);
+                    }
                 }
-            }
-        });
-
-        // Prefill notes with template if empty when loading
-        document.addEventListener('DOMContentLoaded', function() {
-            const notesField = document.getElementById('notes');
-            if (!notesField.value.trim()) {
-                notesField.value = "Notes:\n- \n\nMaterials:\n- ";
-            }
+            });
 
             // Adjust textarea height to fill viewport
             function adjustTextareaHeight() {
                 const viewportHeight = window.innerHeight;
                 const containerHeight = document.querySelector('.container').offsetHeight;
-                const notesHeight = notesField.offsetHeight
+                const notesHeight = notesField.offsetHeight;
 
                 const availableHeight = viewportHeight - (containerHeight - notesHeight);
                 notesField.style.height = Math.max(200, availableHeight) + 'px';
             }
 
-            // Initial adjustment
             adjustTextareaHeight();
-
-            // Adjust on window resize
             window.addEventListener('resize', adjustTextareaHeight);
 
             // Scroll submit button into view when focused on mobile
             notesField.addEventListener('focusin', () => {
-                // Add a delay to allow the keyboard to fully open
+                // Delay to allow the keyboard to fully open
                 setTimeout(() => {
-                    // Use scrollIntoView() to bring the submit button into view
                     document.querySelector('.submit-btn').scrollIntoView({
-                        behavior: 'smooth', // This makes the scroll animation smooth
-                        block: 'start' // This aligns the element to the top of the viewport
+                        behavior: 'smooth',
+                        block: 'start'
                     });
-                }, 500); // 500ms delay
+                }, 500);
             });
         });
     </script>

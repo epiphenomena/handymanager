@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Task - HandyManager</title>
+    <link rel="stylesheet" href="css/styles.css?v=1.4">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4CAF50">
+    <style>
+        .button-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .submit-btn {
+            flex: 3;
+        }
+
+        .cancel-btn {
+            flex: 1;
+        }
+
+        #notes {
+            min-height: 200px;
+            resize: none;
+        }
+
+        .job-name-display {
+            padding: 12px;
+            background-color: #e8f5e9;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        @media (max-width: 599px) {
+            .button-row {
+                flex-direction: column;
+            }
+
+            .submit-btn, .cancel-btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>HandyManager</h1>
+        </header>
+        <main>
+            <h2>Edit Task</h2>
+            <form id="edit-task-form">
+                <div class="form-group">
+                    <label>Job:</label>
+                    <div class="job-name-display" id="job-name"></div>
+                </div>
+                <div class="form-group">
+                    <label for="start-date">Start Date:</label>
+                    <input type="date" id="start-date" required>
+                </div>
+                <div class="form-group">
+                    <label for="start-time">Start Time:</label>
+                    <input type="time" id="start-time" required>
+                </div>
+                <div class="form-group">
+                    <label for="end-date">End Date:</label>
+                    <input type="date" id="end-date">
+                </div>
+                <div class="form-group">
+                    <label for="end-time">End Time:</label>
+                    <input type="time" id="end-time">
+                </div>
+                <div class="form-group">
+                    <label for="notes">Notes:</label>
+                    <textarea id="notes" placeholder="Notes:
+-
+Materials:
+- "></textarea>
+                </div>
+                <input type="hidden" id="task-id">
+                <div class="button-row">
+                    <button type="submit" class="primary-btn submit-btn">Update Task</button>
+                    <button type="button" class="cancel-btn" onclick="window.location.href='./'">Cancel</button>
+                </div>
+            </form>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const editTaskForm = document.getElementById('edit-task-form');
+            const jobNameDisplay = document.getElementById('job-name');
+            const startDateInput = document.getElementById('start-date');
+            const startTimeInput = document.getElementById('start-time');
+            const endDateInput = document.getElementById('end-date');
+            const endTimeInput = document.getElementById('end-time');
+            const notesField = document.getElementById('notes');
+
+            const token = localStorage.getItem('handymanager_token');
+            const techName = localStorage.getItem('handymanager_tech_name');
+
+            if (!token || !techName) {
+                alert('Please set your token and tech name in settings first.');
+                window.location.href = './';
+                return;
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const taskId = urlParams.get('id');
+
+            if (!taskId) {
+                alert('No task ID provided');
+                window.location.href = './';
+                return;
+            }
+
+            document.getElementById('task-id').value = taskId;
+
+            // Split a 'YYYY-MM-DD HH:MM:SS' string into date/time input values
+            function splitDateTime(value) {
+                const date = new Date(value);
+                const pad = n => String(n).padStart(2, '0');
+                return {
+                    date: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+                    time: `${pad(date.getHours())}:${pad(date.getMinutes())}`
+                };
+            }
+
+            // Load task details
+            fetch('get-task.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: token, tech_name: techName, task_id: taskId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    alert('Error loading task: ' + data.message);
+                    window.location.href = './';
+                    return;
+                }
+
+                const task = data.task;
+                jobNameDisplay.textContent = task.job_name;
+
+                const start = splitDateTime(task.start_time);
+                startDateInput.value = start.date;
+                startTimeInput.value = start.time;
+
+                if (task.end_time) {
+                    const end = splitDateTime(task.end_time);
+                    endDateInput.value = end.date;
+                    endTimeInput.value = end.time;
+                }
+
+                notesField.value = task.notes || "Notes:\n- \n\nMaterials:\n- ";
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error loading task. Please try again.');
+            });
+
+            // Handle form submission
+            editTaskForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                const startDate = startDateInput.value;
+                const startTime = startTimeInput.value;
+                const endDate = endDateInput.value;
+                const endTime = endTimeInput.value;
+                const notes = notesField.value; // Don't trim whitespace to preserve formatting
+
+                if (!startDate || !startTime) {
+                    alert('Please fill in the start date and time');
+                    return;
+                }
+
+                fetch('update-task.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token: token,
+                        tech_name: techName,
+                        task_id: taskId,
+                        start_time: `${startDate} ${startTime}`,
+                        end_time: endDate && endTime ? `${endDate} ${endTime}` : null,
+                        notes: notes
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = './';
+                    } else {
+                        alert('Error updating task: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error updating task. Please try again.');
+                });
+            });
+
+            // Handle auto-inserting "- " when pressing enter after a dash line
+            notesField.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    const cursorPosition = this.selectionStart;
+                    const text = this.value;
+                    const beforeCursor = text.substring(0, cursorPosition);
+                    const lines = beforeCursor.split('\n');
+                    const currentLine = lines[lines.length - 1];
+
+                    if (currentLine.trim().startsWith('-')) {
+                        e.preventDefault();
+                        this.value = text.substring(0, cursorPosition) + '\n- ' + text.substring(cursorPosition);
+                        this.setSelectionRange(cursorPosition + 3, cursorPosition + 3);
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
