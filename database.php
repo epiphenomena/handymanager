@@ -196,7 +196,7 @@ function getJobsByStatus(array $statuses) {
     $stmt = $pdo->prepare("
         SELECT j.*,
                COUNT(t.id) AS task_count,
-               SUM(CASE WHEN t.closed_at IS NULL THEN 1 ELSE 0 END) AS open_task_count,
+               SUM(CASE WHEN t.end_time IS NULL THEN 1 ELSE 0 END) AS open_task_count,
                SUM((julianday(t.end_time) - julianday(t.start_time)) * 24.0) AS total_hours,
                MAX(COALESCE(t.end_time, t.start_time)) AS last_activity
         FROM jobs j
@@ -264,13 +264,17 @@ function setJobStatus($jobId, $status) {
         return [false, 'Job not found'];
     }
 
-    // Closing to new tasks requires all tasks to be finished
+    // Closing to new tasks requires all tasks to be finished (have an end time)
     if ($status === 'ready_for_billing') {
         $pdo = getDbConnection();
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tasks WHERE job_id = :id AND closed_at IS NULL");
+        $stmt = $pdo->prepare("SELECT tech_name, start_time FROM tasks WHERE job_id = :id AND end_time IS NULL");
         $stmt->execute(['id' => $jobId]);
-        if ((int)$stmt->fetchColumn() > 0) {
-            return [false, 'This job has tasks still in progress'];
+        $openTasks = $stmt->fetchAll();
+        if (!empty($openTasks)) {
+            $list = implode(', ', array_map(function ($t) {
+                return $t['tech_name'] . ' (started ' . date('M j g:i A', strtotime($t['start_time'])) . ')';
+            }, $openTasks));
+            return [false, "Tasks still in progress: $list. Add an end time (or delete the task) first."];
         }
     }
 
@@ -352,13 +356,13 @@ function getTaskById($taskId) {
     return $stmt->fetch() ?: null;
 }
 
-// In-progress (not yet completed) tasks for a tech
+// In-progress (no end time yet) tasks for a tech
 function getInProgressTasks($techName) {
     $pdo = getDbConnection();
     $stmt = $pdo->prepare("
         SELECT t.id, t.start_time, j.name AS job_name
         FROM tasks t JOIN jobs j ON j.id = t.job_id
-        WHERE t.tech_name = :tech_name AND t.closed_at IS NULL
+        WHERE t.tech_name = :tech_name AND t.end_time IS NULL
         ORDER BY t.start_time DESC
     ");
     $stmt->execute(['tech_name' => $techName]);
@@ -401,7 +405,7 @@ function completeTask($taskId, $endTime, $notes) {
 
 // Partially update a task (only provided fields)
 function updateTaskPartial($taskId, $fields) {
-    $allowed = ['start_time', 'end_time', 'notes', 'tech_name'];
+    $allowed = ['start_time', 'end_time', 'notes', 'tech_name', 'closed_at'];
     $setClauses = [];
     $params = ['id' => $taskId];
     foreach ($allowed as $field) {
@@ -478,6 +482,15 @@ function reportJobsForMonth($month) {
     ");
     $stmt->execute(['month' => $month]);
     return $stmt->fetchAll();
+}
+
+// Months ('YYYY-MM') that have any tasks, newest first
+function getTaskMonths() {
+    $pdo = getDbConnection();
+    return $pdo->query("
+        SELECT DISTINCT strftime('%Y-%m', start_time) AS month
+        FROM tasks ORDER BY month DESC
+    ")->fetchAll(PDO::FETCH_COLUMN);
 }
 
 // All tech names that have logged tasks

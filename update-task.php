@@ -31,6 +31,10 @@ if (array_key_exists('end_time', $input) && $input['end_time'] !== null && $inpu
         sendJsonResponse(['success' => false, 'message' => 'Invalid end time format'], 400);
     }
     $fields['end_time'] = $endTime;
+    // Setting an end time finishes the task
+    if (!$task['closed_at']) {
+        $fields['closed_at'] = now();
+    }
 }
 
 if (array_key_exists('notes', $input)) {

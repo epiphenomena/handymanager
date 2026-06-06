@@ -104,6 +104,29 @@ check "job marked billed" '>Billed<' "$OUT"
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$JOB_ID" --data-urlencode 'status=paid')
 check "job marked paid" '>Paid<' "$OUT"
 
+# --- Standalone log-call page ---
+OUT=$(post log-call.php '{"token":"wrong","customer_name":"Patel","location":"7 Birch Ct"}')
+check "log-call rejects bad token" 'Invalid admin token' "$OUT"
+
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Patel\",\"location\":\"7 Birch Ct\",\"phone\":\"555-0103\",\"call_notes\":\"Drywall repair\"}")
+check "log-call opens job" 'Patel - 7 Birch Ct' "$OUT"
+JOB2_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Joe\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Patel")!==false) { echo $j["id"]; break; }')
+
+# --- A running task blocks ready-for-billing; admin adding an end time unblocks ---
+OUT=$(post create-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Joe\",\"job_id\":$JOB2_ID,\"start_time\":\"2026-06-06 08:00\"}")
+TASK2_ID=$(echo "$OUT" | php -r 'echo json_decode(stream_get_contents(STDIN),true)["task_id"];')
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$JOB2_ID" --data-urlencode 'status=ready_for_billing')
+check "running task blocks ready-for-billing" 'Tasks still in progress: Joe' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=save-task' --data-urlencode "task_id=$TASK2_ID" \
+    --data-urlencode 'tech_name=Joe' --data-urlencode 'start_date=2026-06-06' --data-urlencode 'start_time=08:00' \
+    --data-urlencode 'end_date=2026-06-06' --data-urlencode 'end_time=10:30' --data-urlencode 'notes=Patched drywall')
+check "admin can add end time to task" 'Task updated' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$JOB2_ID" --data-urlencode 'status=ready_for_billing')
+check "ready-for-billing works after end time set" 'Ready for Billing' "$OUT"
+
 # --- Reports ---
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-reports')
 check "monthly report has data" '<td>1</td>' "$OUT"

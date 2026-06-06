@@ -104,6 +104,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 updateTaskPartial($task['id'], [
                     'start_time' => $start ?: null,
                     'end_time' => $end ?: null,
+                    // Setting an end time finishes the task
+                    'closed_at' => ($end && !$task['closed_at']) ? now() : null,
                     'notes' => $_POST['notes'] ?? '',
                     'tech_name' => trim($_POST['tech_name'] ?? '') ?: null,
                 ]);
@@ -293,9 +295,9 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
 
     <div class="status-dates">
         <span>Opened <?= h(fmtDt($job['opened_at'])) ?></span>
-        <?php if ($job['ready_for_billing_at']): ?><span>Ready for billing <?= h(fmtDt($job['ready_for_billing_at'])) ?></span><?php endif; ?>
-        <?php if ($job['billed_at']): ?><span>Billed <?= h(fmtDt($job['billed_at'])) ?></span><?php endif; ?>
-        <?php if ($job['paid_at']): ?><span>Paid <?= h(fmtDt($job['paid_at'])) ?></span><?php endif; ?>
+        <?php if ($job['ready_for_billing_at']): ?><span>Ready for billing <?= h(fmtDate($job['ready_for_billing_at'])) ?></span><?php endif; ?>
+        <?php if ($job['billed_at']): ?><span>Billed <?= h(fmtDate($job['billed_at'])) ?></span><?php endif; ?>
+        <?php if ($job['paid_at']): ?><span>Paid <?= h(fmtDate($job['paid_at'])) ?></span><?php endif; ?>
         <span><?= count($tasks) ?> task<?= count($tasks) === 1 ? '' : 's' ?>, <?= fmtHours($totalHours) ?></span>
     </div>
 
@@ -452,12 +454,14 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
             <button type="submit" class="btn btn-primary">Open Job</button>
         </div>
     </form>
+    <p class="muted">Standalone version of this form for the office: <a href="log-call.php">log-call.php</a></p>
     <?php
 }
 
 function renderReports() {
     $months = reportJobsPerMonth();
     $techs = getTechNames();
+    $taskMonths = getTaskMonths();
     $currentMonth = date('Y-m');
     ?>
     <div class="view-header"><h2>Reports</h2></div>
@@ -501,7 +505,11 @@ function renderReports() {
                 </select>
             </label>
             <label>Month
-                <input type="month" name="month" value="<?= h($currentMonth) ?>">
+                <select name="month">
+                    <?php foreach ($taskMonths as $taskMonth): ?>
+                    <option value="<?= h($taskMonth) ?>" <?= $taskMonth === $currentMonth ? 'selected' : '' ?>><?= h(fmtMonth($taskMonth)) ?></option>
+                    <?php endforeach; ?>
+                </select>
             </label>
         </form>
         <div id="tech-report"></div>
