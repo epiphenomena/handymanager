@@ -8,10 +8,15 @@
 require_once __DIR__ . '/config.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $input = getValidatedInput(['customer_name', 'location'], true);
+    $input = getValidatedInput([], true);
 
-    $customer = trim($input['customer_name']);
-    $location = trim($input['location']);
+    // Known customers/locations for the autocomplete datalists
+    if (($input['action'] ?? '') === 'suggestions') {
+        sendJsonResponse(['success' => true] + getCallSuggestions());
+    }
+
+    $customer = trim($input['customer_name'] ?? '');
+    $location = trim($input['location'] ?? '');
     if ($customer === '' || $location === '') {
         sendJsonResponse(['success' => false, 'message' => 'Customer name and location are required'], 400);
     }
@@ -135,10 +140,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <form id="call-form" style="display:none">
             <label>Customer Name *
-                <input type="text" id="customer-name" required autocomplete="off">
+                <input type="text" id="customer-name" list="customer-list" required autocomplete="off">
+                <datalist id="customer-list"></datalist>
             </label>
             <label>Location / Address *
-                <input type="text" id="location" placeholder="e.g. 123 Main St" required autocomplete="off">
+                <input type="text" id="location" list="location-list" placeholder="e.g. 123 Main St" required autocomplete="off">
+                <datalist id="location-list"></datalist>
             </label>
             <p class="hint">Customer name + location becomes the job name the techs will see.</p>
             <label>Phone Number
@@ -178,6 +185,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             callForm.style.display = '';
             changeTokenBtn.style.display = '';
             document.getElementById('customer-name').focus();
+            loadSuggestions();
+        }
+
+        // Fill the datalists with known customers/locations. Suggestions only -
+        // new (freeform) entries are always allowed.
+        function loadSuggestions() {
+            fetch('log-call.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    token: localStorage.getItem(TOKEN_KEY) || '',
+                    action: 'suggestions'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) return;
+                const fill = (listId, values) => {
+                    const list = document.getElementById(listId);
+                    list.innerHTML = '';
+                    (values || []).forEach(value => {
+                        const option = document.createElement('option');
+                        option.value = value;
+                        list.appendChild(option);
+                    });
+                };
+                fill('customer-list', data.customers);
+                fill('location-list', data.locations);
+            })
+            .catch(error => console.error('Error loading suggestions:', error));
         }
 
         tokenForm.addEventListener('submit', function(e) {
@@ -215,6 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     callForm.reset();
                     document.getElementById('customer-name').focus();
                     window.scrollTo({ top: 0, behavior: 'smooth' });
+                    loadSuggestions();
                 } else {
                     showBanner('Error: ' + data.message, true);
                     if ((data.message || '').includes('token')) {

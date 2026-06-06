@@ -91,6 +91,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             renderLogCallForm("Job opened: " . $name, false);
             break;
 
+        case 'task-add-form':
+            renderTaskAddForm((int)$_POST['id']);
+            break;
+
+        case 'add-task':
+            $jobId = (int)$_POST['id'];
+            $tech = trim($_POST['tech_name'] ?? '');
+            $start = validateDateTime(trim(($_POST['start_date'] ?? '') . ' ' . ($_POST['start_time'] ?? '')));
+            if ($tech === '' || $start === false) {
+                renderJobDetail($jobId, 'Tech name and a valid start date/time are required', true);
+                break;
+            }
+            list($taskId, $message) = createTask($jobId, $tech, $start);
+            if ($taskId === false) {
+                renderJobDetail($jobId, $message, true);
+                break;
+            }
+            // Optional end time and notes in the same step
+            $end = (trim($_POST['end_date'] ?? '') !== '' && trim($_POST['end_time'] ?? '') !== '')
+                ? validateDateTime($_POST['end_date'] . ' ' . $_POST['end_time']) : null;
+            $notes = trim($_POST['notes'] ?? '');
+            if ($end || $notes !== '') {
+                updateTaskPartial($taskId, [
+                    'end_time' => $end ?: null,
+                    'closed_at' => $end ? now() : null,
+                    'notes' => $notes !== '' ? $_POST['notes'] : null,
+                ]);
+            }
+            renderJobDetail($jobId, 'Task added');
+            break;
+
         case 'task-edit-form':
             renderTaskEditForm((int)$_POST['task_id']);
             break;
@@ -303,7 +334,16 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
 
     <?php renderAdminNotes($job); ?>
 
-    <h3>Timeline</h3>
+    <div class="timeline-header">
+        <h3>Timeline</h3>
+        <?php if (jobAcceptsTasks($job)): ?>
+        <button class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#add-task-slot" hx-swap="innerHTML"
+            hx-vals='{"action":"task-add-form","id":<?= (int)$job['id'] ?>}'>+ Add Task</button>
+        <?php else: ?>
+        <span class="muted">Closed to new tasks — reopen the job to add one.</span>
+        <?php endif; ?>
+    </div>
+    <div id="add-task-slot"></div>
     <div class="timeline">
         <div class="timeline-item timeline-call">
             <div class="timeline-item-head">
@@ -381,6 +421,54 @@ function renderJobEditForm($jobId) {
                 hx-vals='{"action":"view-job","id":<?= (int)$job['id'] ?>}'>Cancel</button>
         </div>
     </form>
+    <?php
+}
+
+function renderTaskAddForm($jobId) {
+    $job = getJobById($jobId);
+    if (!jobAcceptsTasks($job)) {
+        echo '<div class="flash flash-error">This job is closed to new tasks</div>';
+        return;
+    }
+    $techs = getTechNames();
+    ?>
+    <div class="panel">
+        <form class="form-stack" hx-post="admin.php" hx-target="#content">
+            <input type="hidden" name="action" value="add-task">
+            <input type="hidden" name="id" value="<?= (int)$job['id'] ?>">
+            <div class="panel-title"><label>Add Task (work reported outside the tech app)</label></div>
+            <div class="form-row">
+                <label>Tech
+                    <input type="text" name="tech_name" list="tech-names" required autofocus>
+                    <datalist id="tech-names">
+                        <?php foreach ($techs as $tech): ?>
+                        <option value="<?= h($tech) ?>"></option>
+                        <?php endforeach; ?>
+                    </datalist>
+                </label>
+                <label>Start Date
+                    <input type="date" name="start_date" value="<?= date('Y-m-d') ?>" required>
+                </label>
+                <label>Start Time
+                    <input type="time" name="start_time" required>
+                </label>
+                <label>End Date
+                    <input type="date" name="end_date">
+                </label>
+                <label>End Time
+                    <input type="time" name="end_time">
+                </label>
+            </div>
+            <label>Notes
+                <textarea name="notes" rows="4" placeholder="Notes:&#10;- &#10;&#10;Materials:&#10;- "></textarea>
+            </label>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-sm">Add Task</button>
+                <button type="button" class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#content"
+                    hx-vals='{"action":"view-job","id":<?= (int)$job['id'] ?>}'>Cancel</button>
+            </div>
+        </form>
+    </div>
     <?php
 }
 
@@ -680,6 +768,16 @@ function exportTechCsv($tech, $month) {
 
         .topbar .spacer { flex: 1; }
 
+        .ext-link {
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 500;
+            text-decoration: none;
+            padding: 6px 8px;
+        }
+
+        .ext-link:hover { color: var(--primary); text-decoration: underline; }
+
         .wrap { max-width: 960px; margin: 0 auto; padding: 24px 20px 64px; }
 
         .view-header {
@@ -895,6 +993,16 @@ function exportTechCsv($tech, $month) {
 
         .danger-zone { margin-top: 32px; padding-top: 16px; border-top: 1px dashed var(--border); }
 
+        .timeline-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .timeline-header h3 { margin: 28px 0 12px; }
+
         /* Tables */
         .report-table { width: 100%; border-collapse: collapse; font-size: 14px; }
         .report-table th, .report-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
@@ -944,6 +1052,8 @@ function exportTechCsv($tech, $month) {
                 hx-vals='{"action":"view-reports"}'>Reports</button>
         </nav>
         <span class="spacer"></span>
+        <a class="ext-link" href="./" target="_blank">Tech App</a>
+        <a class="ext-link" href="log-call.php" target="_blank">Call Log</a>
         <button id="logout-btn" class="btn btn-ghost btn-sm" style="display:none">Change Token</button>
     </div>
 

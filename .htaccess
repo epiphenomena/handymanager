@@ -1,0 +1,10 @@
+# Never serve secrets or data files - the tokens live in config.json and
+# the SQLite database sits in the web root.
+<FilesMatch "^(config\.json|.*\.(db|db-journal|db-wal|db-shm|sqlite))$">
+    Require all denied
+</FilesMatch>
+
+# Backup files left by migrations or rake pulldb
+<FilesMatch "\.(backup|bak)([-.].*)?$">
+    Require all denied
+</FilesMatch>

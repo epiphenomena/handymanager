@@ -313,6 +313,35 @@ function deleteJob($jobId) {
     return $stmt->execute(['id' => $jobId]);
 }
 
+// Known customers and locations for the call-log autocomplete.
+// Locations are derived from job names ("Customer - Location").
+function getCallSuggestions() {
+    $pdo = getDbConnection();
+    $rows = $pdo->query("SELECT name, customer_name FROM jobs WHERE is_system = 0")->fetchAll();
+    $customers = [];
+    $locations = [];
+    foreach ($rows as $row) {
+        $customer = trim($row['customer_name'] ?? '');
+        $name = trim($row['name']);
+        if ($customer !== '') {
+            $customers[$customer] = true;
+            $prefix = $customer . ' - ';
+            if (strpos($name, $prefix) === 0) {
+                $location = trim(substr($name, strlen($prefix)));
+                if ($location !== '') {
+                    $locations[$location] = true;
+                }
+            }
+        } else {
+            // Legacy migrated jobs: the whole name is the location
+            $locations[$name] = true;
+        }
+    }
+    ksort($customers, SORT_NATURAL | SORT_FLAG_CASE);
+    ksort($locations, SORT_NATURAL | SORT_FLAG_CASE);
+    return ['customers' => array_keys($customers), 'locations' => array_keys($locations)];
+}
+
 // ---------------------------------------------------------------------------
 // Tasks
 // ---------------------------------------------------------------------------

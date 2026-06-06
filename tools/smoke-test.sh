@@ -127,6 +127,31 @@ check "admin can add end time to task" 'Task updated' "$OUT"
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$JOB2_ID" --data-urlencode 'status=ready_for_billing')
 check "ready-for-billing works after end time set" 'Ready for Billing' "$OUT"
 
+# --- Call-log autocomplete suggestions ---
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"action\":\"suggestions\"}")
+check "suggestions include customer" 'Patel' "$OUT"
+check "suggestions include location" '7 Birch Ct' "$OUT"
+
+# --- Admin can add a task directly (work reported outside the tech app) ---
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Lee\",\"location\":\"9 Pine Rd\"}")
+JOB3_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Lee")!==false) { echo $j["id"]; break; }')
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=add-task' --data-urlencode "id=$JOB3_ID" \
+    --data-urlencode 'tech_name=Tim' --data-urlencode 'start_date=2026-06-06' --data-urlencode 'start_time=09:00' \
+    --data-urlencode 'end_date=2026-06-06' --data-urlencode 'end_time=12:00' --data-urlencode 'notes=Phoned in: replaced railing')
+check "admin can add a task" 'Task added' "$OUT"
+check "added task shows in timeline" 'Phoned in: replaced railing' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=add-task' --data-urlencode "id=$JOB3_ID" \
+    --data-urlencode 'tech_name=' --data-urlencode 'start_date=2026-06-06' --data-urlencode 'start_time=09:00')
+check "add-task requires tech name" 'Tech name and a valid start' "$OUT"
+
+# Completed (ready-for-billing) jobs reject admin add-task too
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$JOB3_ID" --data-urlencode 'status=ready_for_billing')
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=add-task' --data-urlencode "id=$JOB3_ID" \
+    --data-urlencode 'tech_name=Tim' --data-urlencode 'start_date=2026-06-06' --data-urlencode 'start_time=14:00')
+check "closed job rejects admin add-task" 'not open for new tasks' "$OUT"
+
 # --- Reports ---
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-reports')
 check "monthly report has data" '<td>1</td>' "$OUT"
