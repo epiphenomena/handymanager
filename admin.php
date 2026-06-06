@@ -1075,6 +1075,35 @@ function exportTechCsv($tech, $month) {
 
         .ext-link:hover { color: var(--primary); text-decoration: underline; }
 
+        /* Right-side items: inline on desktop, dropdown behind ⋮ on mobile */
+        .topbar-menu { display: flex; align-items: center; gap: 4px; }
+        #menu-toggle { display: none; font-size: 18px; line-height: 1; padding: 4px 12px; }
+
+        @media (max-width: 700px) {
+            #menu-toggle { display: inline-block; }
+
+            .topbar-menu {
+                display: none;
+                position: absolute;
+                top: 100%;
+                right: 10px;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 2px;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                box-shadow: 0 6px 16px rgba(0,0,0,.12);
+                padding: 8px;
+                z-index: 30;
+                min-width: 160px;
+            }
+
+            .topbar-menu.open { display: flex; }
+            .topbar-menu .ext-link { padding: 10px 12px; }
+            .topbar-menu .btn { text-align: left; }
+        }
+
         .wrap { max-width: 960px; margin: 0 auto; padding: 24px 20px 64px; }
 
         .view-header {
@@ -1353,9 +1382,12 @@ function exportTechCsv($tech, $month) {
                 hx-vals='{"action":"view-reports"}'>Reports</button>
         </nav>
         <span class="spacer"></span>
-        <a class="ext-link" href="./" target="_blank">Tech App</a>
-        <a class="ext-link" href="log-call.php" target="_blank">Call Log</a>
-        <button id="logout-btn" class="btn btn-ghost btn-sm" style="display:none">Change Token</button>
+        <button id="menu-toggle" class="btn btn-ghost btn-sm" aria-label="Menu">⋮</button>
+        <div id="topbar-menu" class="topbar-menu">
+            <a class="ext-link" href="./" target="_blank">Tech App</a>
+            <a class="ext-link" href="log-call.php" target="_blank">Call Log</a>
+            <button id="logout-btn" class="btn btn-ghost btn-sm" style="display:none">Change Token</button>
+        </div>
     </div>
 
     <div class="wrap">
@@ -1375,6 +1407,22 @@ function exportTechCsv($tech, $month) {
         const gate = document.getElementById('token-gate');
         const content = document.getElementById('content');
         const logoutBtn = document.getElementById('logout-btn');
+        const menuToggle = document.getElementById('menu-toggle');
+        const topbarMenu = document.getElementById('topbar-menu');
+
+        // Mobile: the right-side links live behind the ⋮ dropdown
+        menuToggle.addEventListener('click', function(e) {
+            e.stopPropagation();
+            topbarMenu.classList.toggle('open');
+        });
+        document.addEventListener('click', function(e) {
+            if (!topbarMenu.contains(e.target)) {
+                topbarMenu.classList.remove('open');
+            }
+        });
+        topbarMenu.addEventListener('click', function() {
+            topbarMenu.classList.remove('open');
+        });
 
         // Attach the token to every htmx request - the server checks it each time
         document.body.addEventListener('htmx:configRequest', function(e) {
