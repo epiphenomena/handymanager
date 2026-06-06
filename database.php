@@ -271,9 +271,7 @@ function getOpenJobsForTech() {
         SELECT j.id, j.name, j.is_system
         FROM jobs j
         WHERE j.is_system = 1 OR j.status IN ($placeholders)
-        ORDER BY j.is_system DESC,
-                 (SELECT MAX(t.start_time) FROM tasks t WHERE t.job_id = j.id) DESC,
-                 j.opened_at DESC
+        ORDER BY j.is_system DESC, j.name COLLATE NOCASE
     ");
     $stmt->execute(array_values(JOB_ACTIVE_STATUSES));
     return $stmt->fetchAll();
@@ -555,14 +553,14 @@ function deleteTask($taskId) {
     return $pdo->prepare("DELETE FROM tasks WHERE id = :id")->execute(['id' => $taskId]);
 }
 
-// All tasks for a job, oldest first (job timeline)
+// All tasks for a job, newest first (job timeline is reverse chronological)
 function getTasksForJob($jobId) {
     $pdo = getDbConnection();
     $stmt = $pdo->prepare("
         SELECT *, (julianday(end_time) - julianday(start_time)) * 24.0 AS hours
         FROM tasks
         WHERE job_id = :job_id
-        ORDER BY start_time
+        ORDER BY start_time DESC
     ");
     $stmt->execute(['job_id' => $jobId]);
     return $stmt->fetchAll();

@@ -201,6 +201,16 @@ check "replayed uuid is idempotent" "\"task_id\":$QTASK_ID" "$OUT"
 OUT=$(post complete-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\",\"task_uuid\":\"$UUID\",\"end_time\":\"2026-06-06 16:00\",\"notes\":\"synced from offline queue\",\"queued\":true}")
 check "complete by client uuid" '"success":true' "$OUT"
 
+# --- Tech autocomplete is alphabetical (system job first) ---
+OUT=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}")
+SORTED=$(echo "$OUT" | php -r '
+$d = json_decode(stream_get_contents(STDIN), true);
+$names = array_values(array_map(function($j){ return $j["name"]; },
+    array_filter($d["jobs"], function($j){ return !$j["is_system"]; })));
+$sorted = $names; usort($sorted, "strcasecmp");
+echo ($names === $sorted && $d["jobs"][0]["is_system"]) ? "yes" : "no";')
+check "open jobs sorted alphabetically after Clock" 'yes' "$SORTED"
+
 # --- Clock In/Out: own admin view, tech filter, never billable ---
 CLOCK_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if($j["is_system"]) { echo $j["id"]; break; }')
 

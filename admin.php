@@ -410,18 +410,6 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
     </div>
     <div id="add-task-slot"></div>
     <div class="timeline">
-        <div class="timeline-item timeline-call">
-            <div class="timeline-item-head">
-                <strong>Call logged — job opened</strong>
-                <span class="muted"><?= h(fmtDt($job['opened_at'])) ?></span>
-            </div>
-            <div class="timeline-item-body">
-                <?php if ($job['customer_name']): ?><div><strong>Customer:</strong> <?= h($job['customer_name']) ?></div><?php endif; ?>
-                <?php if ($job['phone']): ?><div><strong>Phone:</strong> <?= h($job['phone']) ?></div><?php endif; ?>
-                <?php if ($job['call_notes']): ?><pre class="notes"><?= h($job['call_notes']) ?></pre><?php endif; ?>
-            </div>
-        </div>
-
         <?php foreach ($tasks as $task): ?>
         <div class="timeline-item">
             <div class="timeline-item-head">
@@ -447,6 +435,19 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
         <?php if (empty($tasks)): ?>
         <p class="empty-state">No tasks yet.</p>
         <?php endif; ?>
+
+        <!-- Oldest event last: the timeline is reverse chronological -->
+        <div class="timeline-item timeline-call">
+            <div class="timeline-item-head">
+                <strong>Call logged — job opened</strong>
+                <span class="muted"><?= h(fmtDt($job['opened_at'])) ?></span>
+            </div>
+            <div class="timeline-item-body">
+                <?php if ($job['customer_name']): ?><div><strong>Customer:</strong> <?= h($job['customer_name']) ?></div><?php endif; ?>
+                <?php if ($job['phone']): ?><div><strong>Phone:</strong> <?= h($job['phone']) ?></div><?php endif; ?>
+                <?php if ($job['call_notes']): ?><pre class="notes"><?= h($job['call_notes']) ?></pre><?php endif; ?>
+            </div>
+        </div>
     </div>
 
     <div class="danger-zone">
