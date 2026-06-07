@@ -10,9 +10,10 @@
 define('DB_FILE', getenv('HANDYMANAGER_DB') ?: __DIR__ . '/handymanager.db');
 
 // Job statuses
-const JOB_STATUSES = ['open', 'in_progress', 'on_hold', 'ready_for_billing', 'billed', 'paid'];
+//   closed = opened but won't be taken through to paid (abandoned/cancelled).
+const JOB_STATUSES = ['open', 'in_progress', 'on_hold', 'ready_for_billing', 'billed', 'paid', 'closed'];
 // Statuses that accept new tasks (and appear in the tech autocomplete).
-// on_hold is deliberately excluded: it hides the job from techs without closing it.
+// on_hold and closed are deliberately excluded: they hide the job from techs.
 const JOB_ACTIVE_STATUSES = ['open', 'in_progress'];
 
 // Initialize database connection
@@ -45,6 +46,7 @@ function initDatabase() {
         1 => 'migration1_jobs_and_tasks',
         2 => 'migration2_task_client_uuid',
         3 => 'migration3_merge_legacy_clock_job',
+        4 => 'migration4_job_closed_status',
     ];
 
     foreach ($migrations as $target => $fn) {
@@ -215,6 +217,12 @@ function migration3_merge_legacy_clock_job($pdo) {
     }
 }
 
+// Migration 4: a job-level closed_at, supporting the "closed" status for
+// jobs opened but not taken through to paid.
+function migration4_job_closed_status($pdo) {
+    $pdo->exec("ALTER TABLE jobs ADD COLUMN closed_at TEXT");
+}
+
 // ---------------------------------------------------------------------------
 // Jobs
 // ---------------------------------------------------------------------------
@@ -334,26 +342,37 @@ function setJobStatus($jobId, $status) {
         }
     }
 
-    // Set the timestamp for the new status (if not already set) and clear
-    // timestamps for any later statuses (handles moving backwards).
-    $order = ['ready_for_billing' => 'ready_for_billing_at', 'billed' => 'billed_at', 'paid' => 'paid_at'];
     $sets = ['status = :status'];
     $params = ['status' => $status, 'id' => $jobId];
-    $reached = false;
-    foreach ($order as $st => $col) {
-        if ($reached) {
-            $sets[] = "$col = NULL";
-        } elseif ($st === $status) {
-            $sets[] = "$col = COALESCE($col, :now)";
-            $params['now'] = now();
-            $reached = true;
+
+    if ($status === 'closed') {
+        // Closed is a side exit from any stage: stamp closed_at, leave the
+        // billing timestamps as a historical record of how far it got.
+        $sets[] = "closed_at = COALESCE(closed_at, :now)";
+        $params['now'] = now();
+    } else {
+        // Moving to any non-closed status clears the closed marker.
+        $sets[] = "closed_at = NULL";
+
+        // Set the timestamp for the new status (if not already set) and clear
+        // timestamps for any later statuses (handles moving backwards).
+        $order = ['ready_for_billing' => 'ready_for_billing_at', 'billed' => 'billed_at', 'paid' => 'paid_at'];
+        $reached = false;
+        foreach ($order as $st => $col) {
+            if ($reached) {
+                $sets[] = "$col = NULL";
+            } elseif ($st === $status) {
+                $sets[] = "$col = COALESCE($col, :now)";
+                $params['now'] = now();
+                $reached = true;
+            }
         }
-    }
-    if (!$reached && in_array($status, ['open', 'in_progress', 'on_hold'], true)) {
-        // Reopening (or holding): clear all completion timestamps
-        $sets[] = "ready_for_billing_at = NULL";
-        $sets[] = "billed_at = NULL";
-        $sets[] = "paid_at = NULL";
+        if (!$reached) {
+            // open / in_progress / on_hold: clear all completion timestamps
+            $sets[] = "ready_for_billing_at = NULL";
+            $sets[] = "billed_at = NULL";
+            $sets[] = "paid_at = NULL";
+        }
     }
 
     $pdo = getDbConnection();
@@ -638,9 +657,61 @@ function reportJobsForMonth($month) {
                 FROM tasks t WHERE t.job_id = j.id) AS total_hours
         FROM jobs j
         WHERE j.is_system = 0 AND strftime('%Y-%m', j.ready_for_billing_at) = :month
-        ORDER BY j.ready_for_billing_at
+        ORDER BY j.ready_for_billing_at DESC
     ");
     $stmt->execute(['month' => $month]);
+    return $stmt->fetchAll();
+}
+
+// ---------------------------------------------------------------------------
+// Customer lookup
+// ---------------------------------------------------------------------------
+
+// SQL expression for a job's customer identity: the customer_name, or the
+// job name for legacy jobs that predate the customer_name field.
+const CUSTOMER_EXPR = "COALESCE(NULLIF(TRIM(customer_name), ''), name)";
+
+// Customers matching a fuzzy query (each whitespace-separated token must
+// appear, in any order). Empty query returns all customers.
+function searchCustomers($query) {
+    $pdo = getDbConnection();
+    $expr = CUSTOMER_EXPR;
+    $where = ['is_system = 0'];
+    $params = [];
+    $tokens = preg_split('/\s+/', trim($query), -1, PREG_SPLIT_NO_EMPTY);
+    foreach ($tokens as $i => $token) {
+        $where[] = "LOWER($expr) LIKE :tok$i";
+        $params["tok$i"] = '%' . mb_strtolower($token) . '%';
+    }
+    $stmt = $pdo->prepare("
+        SELECT $expr AS customer,
+               COUNT(*) AS job_count,
+               MAX(opened_at) AS last_opened
+        FROM jobs
+        WHERE " . implode(' AND ', $where) . "
+        GROUP BY customer
+        ORDER BY customer COLLATE NOCASE
+        LIMIT 50
+    ");
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+// All jobs for one customer (by the customer identity expression), newest
+// first, with task aggregates.
+function getJobsForCustomer($customer) {
+    $pdo = getDbConnection();
+    $expr = CUSTOMER_EXPR;
+    $stmt = $pdo->prepare("
+        SELECT j.*,
+               (SELECT COUNT(*) FROM tasks t WHERE t.job_id = j.id) AS task_count,
+               (SELECT SUM((julianday(t.end_time) - julianday(t.start_time)) * 24.0)
+                FROM tasks t WHERE t.job_id = j.id) AS total_hours
+        FROM jobs j
+        WHERE j.is_system = 0 AND $expr = :customer
+        ORDER BY j.opened_at DESC
+    ");
+    $stmt->execute(['customer' => $customer]);
     return $stmt->fetchAll();
 }
 

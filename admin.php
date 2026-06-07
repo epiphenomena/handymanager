@@ -14,12 +14,19 @@ const STATUS_LABELS = [
     'ready_for_billing' => 'Ready for Billing',
     'billed' => 'Billed',
     'paid' => 'Paid',
+    'closed' => 'Closed',
 ];
 
 const STATUS_GROUPS = [
     'active' => ['open', 'in_progress', 'on_hold'],
     'billing' => ['ready_for_billing', 'billed'],
-    'paid' => ['paid'],
+    'paid' => ['paid', 'closed'],
+];
+
+const GROUP_TITLES = [
+    'active' => 'Active Jobs',
+    'billing' => 'Billing',
+    'paid' => 'Paid & Closed',
 ];
 
 // ---------------------------------------------------------------------------
@@ -38,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     switch ($action) {
         case 'view-jobs':
-            renderJobsView($_POST['group'] ?? 'active');
+            renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '');
             break;
 
         case 'view-job':
@@ -51,7 +58,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         case 'set-status':
             list($ok, $message) = setJobStatus((int)$_POST['id'], $_POST['status'] ?? '');
-            renderJobDetail((int)$_POST['id'], $ok ? 'Status updated' : $message, !$ok);
+            // Status can be changed from a job list or from the detail view;
+            // re-render whichever the request came from.
+            if (($_POST['return'] ?? '') === 'list') {
+                renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '',
+                    $ok ? null : $message, !$ok);
+            } else {
+                renderJobDetail((int)$_POST['id'], $ok ? 'Status updated' : $message, !$ok);
+            }
             break;
 
         case 'save-notes':
@@ -76,7 +90,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         case 'delete-job':
             deleteJob((int)$_POST['id']);
-            renderJobsView('active');
+            renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', 'Job deleted');
+            break;
+
+        case 'customer-search':
+            renderCustomerSearchResults($_POST['q'] ?? '');
+            break;
+
+        case 'customer-jobs':
+            renderCustomerJobs($_POST['customer'] ?? '');
             break;
 
         case 'log-call-form':
@@ -244,15 +266,31 @@ function flash($message, $isError = false) {
 // Fragments
 // ---------------------------------------------------------------------------
 
-function renderJobsView($group) {
-    $statuses = STATUS_GROUPS[$group] ?? STATUS_GROUPS['active'];
+function renderJobsView($group, $statusFilter = '', $message = null, $isError = false) {
+    $group = isset(STATUS_GROUPS[$group]) ? $group : 'active';
+    $groupStatuses = STATUS_GROUPS[$group];
+    // A status filter narrows the group to a single status (must belong to it)
+    $statuses = ($statusFilter !== '' && in_array($statusFilter, $groupStatuses, true))
+        ? [$statusFilter] : $groupStatuses;
     $jobs = getJobsByStatus($statuses);
-    $titles = ['active' => 'Active Jobs (Open / In Progress / On Hold)', 'billing' => 'Ready for Billing & Billed', 'paid' => 'Paid'];
     ?>
+    <?= flash($message, $isError) ?>
     <div class="view-header">
-        <h2><?= h($titles[$group] ?? 'Jobs') ?></h2>
+        <h2><?= h(GROUP_TITLES[$group] ?? 'Jobs') ?></h2>
         <span class="muted"><?= count($jobs) ?> job<?= count($jobs) === 1 ? '' : 's' ?></span>
     </div>
+
+    <?php if (count($groupStatuses) > 1): ?>
+    <div class="filter-pills">
+        <button class="pill <?= $statusFilter === '' ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
+            hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => ''])) ?>'>All</button>
+        <?php foreach ($groupStatuses as $st): ?>
+        <button class="pill <?= $statusFilter === $st ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
+            hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $st])) ?>'><?= h(STATUS_LABELS[$st]) ?></button>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
     <?php if (empty($jobs)): ?>
         <p class="empty-state">No jobs here.</p>
     <?php endif; ?>
@@ -273,10 +311,14 @@ function renderJobsView($group) {
                 <span>Opened <?= h(fmtDate($job['opened_at'])) ?></span>
                 <?php if ($job['ready_for_billing_at']): ?><span>Completed <?= h(fmtDate($job['ready_for_billing_at'])) ?></span><?php endif; ?>
                 <?php if ($job['paid_at']): ?><span>Paid <?= h(fmtDate($job['paid_at'])) ?></span><?php endif; ?>
+                <?php if ($job['closed_at']): ?><span>Closed <?= h(fmtDate($job['closed_at'])) ?></span><?php endif; ?>
             </div>
             <?php if ($job['admin_notes']): ?>
             <div class="job-card-notes"><?= h(mb_strimwidth($job['admin_notes'], 0, 220, '…')) ?></div>
             <?php endif; ?>
+            <div class="job-card-actions">
+                <?php renderStatusButtons($job, ['return' => 'list', 'group' => $group, 'status_filter' => $statusFilter], 'btn-xs'); ?>
+            </div>
         </div>
         <?php endforeach; ?>
     </div>
@@ -301,38 +343,59 @@ function renderAdminNotes($job, $justSaved = false) {
     <?php
 }
 
-function renderStatusActions($job) {
-    $transitions = [
-        'open' => [
-            ['ready_for_billing', 'Mark Ready for Billing', 'btn-primary'],
-            ['on_hold', 'Put On Hold', 'btn-ghost'],
-        ],
-        'in_progress' => [
-            ['ready_for_billing', 'Mark Ready for Billing', 'btn-primary'],
-            ['on_hold', 'Put On Hold', 'btn-ghost'],
-        ],
-        'on_hold' => [
-            // resume target is decided below: open if no tasks yet, else in progress
-            ['in_progress', 'Resume Job', 'btn-primary'],
-            ['ready_for_billing', 'Mark Ready for Billing', 'btn-ghost'],
-        ],
-        'ready_for_billing' => [['billed', 'Mark Billed', 'btn-primary'], ['in_progress', 'Reopen Job', 'btn-ghost']],
-        'billed' => [['paid', 'Mark Paid', 'btn-primary'], ['ready_for_billing', 'Back to Ready for Billing', 'btn-ghost']],
-        'paid' => [['billed', 'Back to Billed', 'btn-ghost']],
-    ];
-    $buttons = $transitions[$job['status']] ?? [];
-    if ($job['status'] === 'on_hold') {
-        $stmt = getDbConnection()->prepare("SELECT COUNT(*) FROM tasks WHERE job_id = :id");
-        $stmt->execute(['id' => $job['id']]);
-        if ((int)$stmt->fetchColumn() === 0) {
-            $buttons[0][0] = 'open';
-        }
+// Available status transitions for a job: forward, one step backward, plus
+// hold/close where relevant. A job on hold (or closed) resumes to "open" if
+// it has no tasks yet, otherwise to "in progress".
+function jobTransitions($job) {
+    $hasTasks = ((int)($job['task_count'] ?? 0)) > 0;
+    $resume = $hasTasks ? 'in_progress' : 'open';
+    switch ($job['status']) {
+        case 'open':
+        case 'in_progress':
+            return [
+                ['ready_for_billing', 'Ready for Billing', 'btn-primary'],
+                ['on_hold', 'Hold', 'btn-ghost'],
+                ['closed', 'Close', 'btn-ghost'],
+            ];
+        case 'on_hold':
+            return [
+                [$resume, 'Resume Job', 'btn-primary'],
+                ['ready_for_billing', 'Ready for Billing', 'btn-ghost'],
+                ['closed', 'Close', 'btn-ghost'],
+            ];
+        case 'ready_for_billing':
+            return [
+                ['billed', 'Mark Billed', 'btn-primary'],
+                ['in_progress', 'Reopen', 'btn-ghost'],
+                ['closed', 'Close', 'btn-ghost'],
+            ];
+        case 'billed':
+            return [
+                ['paid', 'Mark Paid', 'btn-primary'],
+                ['ready_for_billing', 'Back to Ready for Billing', 'btn-ghost'],
+            ];
+        case 'paid':
+            return [['billed', 'Back to Billed', 'btn-ghost']];
+        case 'closed':
+            return [[$resume, 'Reopen', 'btn-primary']];
     }
-    foreach ($buttons as $t) {
+    return [];
+}
+
+// Render the status transition buttons. $returnVals carries where the
+// re-render should land (a job list or the detail view). onclick stops the
+// click from also triggering the enclosing card's view-job request.
+function renderStatusButtons($job, array $returnVals, $size = 'btn-sm') {
+    foreach (jobTransitions($job) as $t) {
         list($status, $label, $class) = $t;
+        $vals = array_merge(
+            ['action' => 'set-status', 'id' => (int)$job['id'], 'status' => $status],
+            $returnVals
+        );
         ?>
-        <button class="btn <?= $class ?> btn-sm" hx-post="admin.php" hx-target="#content"
-            hx-vals='{"action":"set-status","id":<?= (int)$job['id'] ?>,"status":"<?= h($status) ?>"}'><?= h($label) ?></button>
+        <button class="btn <?= $class ?> <?= $size ?>" onclick="event.stopPropagation()"
+            hx-post="admin.php" hx-target="#content"
+            hx-vals='<?= h(json_encode($vals)) ?>'><?= h($label) ?></button>
         <?php
     }
 }
@@ -353,8 +416,11 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
     foreach ($tasks as $task) {
         $totalHours += (float)($task['hours'] ?? 0);
     }
-    $backGroup = in_array($job['status'], STATUS_GROUPS['active'], true) ? 'active'
-        : ($job['status'] === 'paid' ? 'paid' : 'billing');
+    $job['task_count'] = count($tasks); // for jobTransitions resume target
+    $backGroup = 'active';
+    foreach (STATUS_GROUPS as $g => $statuses) {
+        if (in_array($job['status'], $statuses, true)) { $backGroup = $g; break; }
+    }
     ?>
     <?= flash($message, $isError) ?>
     <div class="view-header">
@@ -371,7 +437,7 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
             </div>
         </div>
         <div class="job-detail-actions">
-            <?php renderStatusActions($job); ?>
+            <?php renderStatusButtons($job, ['return' => 'detail']); ?>
             <button class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#content"
                 hx-vals='{"action":"job-edit-form","id":<?= (int)$job['id'] ?>}'>Edit Details</button>
             <form method="post" action="admin.php" class="inline-form">
@@ -394,6 +460,7 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
         <?php if ($job['ready_for_billing_at']): ?><span>Ready for billing <?= h(fmtDate($job['ready_for_billing_at'])) ?></span><?php endif; ?>
         <?php if ($job['billed_at']): ?><span>Billed <?= h(fmtDate($job['billed_at'])) ?></span><?php endif; ?>
         <?php if ($job['paid_at']): ?><span>Paid <?= h(fmtDate($job['paid_at'])) ?></span><?php endif; ?>
+        <?php if ($job['closed_at']): ?><span>Closed <?= h(fmtDate($job['closed_at'])) ?></span><?php endif; ?>
         <span><?= count($tasks) ?> task<?= count($tasks) === 1 ? '' : 's' ?>, <?= fmtHours($totalHours) ?></span>
     </div>
 
@@ -453,7 +520,7 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
     <div class="danger-zone">
         <button class="btn btn-danger btn-sm" hx-post="admin.php" hx-target="#content"
             hx-confirm="Delete this job AND all of its tasks? This cannot be undone."
-            hx-vals='{"action":"delete-job","id":<?= (int)$job['id'] ?>}'>Delete Job</button>
+            hx-vals='<?= h(json_encode(['action' => 'delete-job', 'id' => (int)$job['id'], 'group' => $backGroup])) ?>'>Delete Job</button>
     </div>
     <?php
 }
@@ -751,6 +818,72 @@ function renderReports() {
         </form>
         <div id="tech-report"></div>
     </div>
+
+    <div class="panel">
+        <div class="panel-title"><label>Customer Lookup</label></div>
+        <input type="search" id="customer-search" placeholder="Type a customer name…" autocomplete="off"
+            hx-post="admin.php" hx-target="#customer-results" hx-trigger="keyup changed delay:200ms, search"
+            hx-vals='{"action":"customer-search"}' name="q">
+        <div id="customer-results"></div>
+        <div id="customer-jobs"></div>
+    </div>
+    <?php
+}
+
+// Matching customers as a pick list (fed by the search box as you type)
+function renderCustomerSearchResults($query) {
+    if (trim($query) === '') {
+        echo '<p class="muted hint">Start typing to find a customer.</p>';
+        return;
+    }
+    $customers = searchCustomers($query);
+    if (empty($customers)) {
+        echo '<p class="empty-state">No matching customers.</p>';
+        return;
+    }
+    ?>
+    <div class="customer-matches">
+        <?php foreach ($customers as $c): ?>
+        <button class="pill" hx-post="admin.php" hx-target="#customer-jobs"
+            hx-vals='<?= h(json_encode(['action' => 'customer-jobs', 'customer' => $c['customer']])) ?>'>
+            <?= h($c['customer']) ?> <span class="muted">(<?= (int)$c['job_count'] ?>)</span>
+        </button>
+        <?php endforeach; ?>
+    </div>
+    <?php
+}
+
+// All jobs for one customer, newest first
+function renderCustomerJobs($customer) {
+    if (trim($customer) === '') {
+        return;
+    }
+    $jobs = getJobsForCustomer($customer);
+    $totalHours = 0;
+    foreach ($jobs as $job) {
+        $totalHours += (float)($job['total_hours'] ?? 0);
+    }
+    ?>
+    <h4><?= h($customer) ?> — <?= count($jobs) ?> job<?= count($jobs) === 1 ? '' : 's' ?>, <?= fmtHours($totalHours) ?></h4>
+    <?php if (empty($jobs)): ?>
+        <p class="empty-state">No jobs for this customer.</p>
+        <?php return; ?>
+    <?php endif; ?>
+    <table class="report-table">
+        <thead><tr><th>Job</th><th>Status</th><th>Opened</th><th>Tasks</th><th>Hours</th></tr></thead>
+        <tbody>
+            <?php foreach ($jobs as $job): ?>
+            <tr class="clickable" hx-post="admin.php" hx-target="#content" hx-swap="innerHTML show:window:top"
+                hx-vals='<?= h(json_encode(['action' => 'view-job', 'id' => (int)$job['id']])) ?>'>
+                <td><?= h($job['name']) ?></td>
+                <td><?= statusBadge($job['status']) ?></td>
+                <td><?= h(fmtDate($job['opened_at'])) ?></td>
+                <td><?= (int)$job['task_count'] ?></td>
+                <td><?= fmtHours($job['total_hours']) ?></td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
     <?php
 }
 
@@ -894,6 +1027,7 @@ function jobExportData($jobId) {
             'ready_for_billing_at' => $job['ready_for_billing_at'],
             'billed_at' => $job['billed_at'],
             'paid_at' => $job['paid_at'],
+            'closed_at' => $job['closed_at'],
         ],
         'tasks' => array_map(function ($task) {
             return [
@@ -940,6 +1074,7 @@ function exportJobMarkdown($jobId) {
     if ($job['ready_for_billing_at']) $md .= "- **Ready for billing:** " . fmtDate($job['ready_for_billing_at']) . "\n";
     if ($job['billed_at']) $md .= "- **Billed:** " . fmtDate($job['billed_at']) . "\n";
     if ($job['paid_at']) $md .= "- **Paid:** " . fmtDate($job['paid_at']) . "\n";
+    if ($job['closed_at']) $md .= "- **Closed:** " . fmtDate($job['closed_at']) . "\n";
     $md .= "- **Work:** {$data['summary']['task_count']} task(s), {$data['summary']['total_hours']} hours\n";
 
     if ($job['call_notes']) {
@@ -1199,6 +1334,43 @@ function exportTechCsv($tech, $month) {
         .badge-ready_for_billing { background: #ede9fe; color: #5b21b6; }
         .badge-billed { background: #cffafe; color: #155e75; }
         .badge-paid { background: #dcfce7; color: #166534; }
+        .badge-closed { background: #fee2e2; color: #991b1b; }
+
+        /* Filter pills (tab sub-filters) and customer match chips */
+        .filter-pills, .customer-matches {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+        .customer-matches { margin-top: 10px; }
+
+        .pill {
+            font: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            border-radius: 999px;
+            padding: 5px 14px;
+            cursor: pointer;
+        }
+
+        .pill:hover { border-color: var(--primary); color: var(--primary); }
+        .pill.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+        /* Status buttons on job cards */
+        .job-card-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border);
+        }
+
+        #customer-search { max-width: 360px; }
 
         /* Panels & forms */
         .panel {

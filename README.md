@@ -11,7 +11,8 @@ them through billing.
   (e.g. `Smith - 412 Oak Ave`). A job moves through statuses:
   `open → in progress → ready for billing → billed → paid`, plus an
   **on hold** status that hides the job from the tech picker (and blocks
-  new tasks) without closing it.
+  new tasks) without closing it, and a **closed** status for jobs opened
+  but not taken through to paid (abandoned/cancelled).
   Once marked **ready for billing** a job is closed to new tasks and
   disappears from the tech job picker. A repeat customer at the same
   location gets a *new* job opened after the previous one closed.
@@ -57,9 +58,13 @@ Server-rendered PHP + [htmx](https://htmx.org). `GET` serves the page shell;
 every data interaction is a `POST` returning an HTML fragment, with the admin
 token (kept in localStorage) attached and verified on **every** request.
 
-- **Active / Billing / Paid** — jobs grouped by status (active includes
-  open, in progress, and on hold). Cards show status, task counts, hours,
-  and the admin job notes.
+- **Active / Billing / Paid** — jobs grouped by status (active = open /
+  in progress / on hold; billing = ready for billing / billed; paid =
+  paid / closed), newest first. Each tab has status sub-filter pills, and
+  every job card carries status buttons so jobs can be moved forward or
+  backward through the stages (resume, close, mark billed, back to ready
+  for billing, etc.) directly from the list. Cards show status, task
+  counts, hours, and the admin job notes.
 - **Job detail** — timeline of the opening call and every task; editable job
   notes; status transition buttons (ready for billing / billed / paid, plus
   on hold and reopen); edit job details; add tasks directly (for work a tech
@@ -70,7 +75,9 @@ token (kept in localStorage) attached and verified on **every** request.
   from past jobs (freeform allowed); picking a known customer prefills
   their last location and phone.
 - **Reports** — jobs completed per month (with status breakdown, hours and a
-  per-month drill-down) and tasks per tech per month. All exportable as CSV.
+  per-month drill-down), tasks per tech per month, and a customer lookup
+  with fuzzy search that lists all of a customer's jobs. All exportable as
+  CSV.
 
 ### Standalone call log — `log-call.php`
 
@@ -125,6 +132,11 @@ jobs:  id, name, customer_name, phone, call_notes, admin_notes,
 tasks: id, job_id, created_at, tech_name, start_time, end_time, notes,
        closed_at, client_uuid
 ```
+
+A separate `~/py/handy/export.py` (not in this repo) emails a daily
+per-tech job report by reading the production db over SSH. It reads
+`tasks` joined to `jobs`; its "Location" field is the job name. Keep its
+output columns stable — a non-technical user relies on the exact format.
 
 ## Development & testing
 

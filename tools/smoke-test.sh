@@ -177,6 +177,52 @@ OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' 
 OUT=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}")
 check "resumed job visible to techs again" 'Nguyen' "$OUT"
 
+# --- Closed status, tab filters, and list-level status changes ---
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Abbott\",\"location\":\"1 First St\"}")
+ABBOTT_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Abbott")!==false){echo $j["id"];break;}')
+
+# Close it straight from the active list
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ABBOTT_ID" --data-urlencode 'status=closed' --data-urlencode 'return=list' --data-urlencode 'group=active')
+check "close from list re-renders list" 'Active Jobs' "$OUT"
+
+OUT=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}")
+if [[ "$OUT" == *'Abbott'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - closed job hidden from tech picker"
+else
+    PASS=$((PASS+1)); echo "ok   - closed job hidden from tech picker"
+fi
+
+OUT=$(post create-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\",\"job_id\":$ABBOTT_ID,\"start_time\":\"2026-06-07 09:00\"}")
+check "closed job rejects new tasks" 'not open for new tasks' "$OUT"
+
+# Paid tab, filtered to Closed, shows it
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=paid' --data-urlencode 'status_filter=closed')
+check "closed filter shows closed job" 'Abbott' "$OUT"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=paid' --data-urlencode 'status_filter=paid')
+if [[ "$OUT" == *'Abbott'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - paid filter excludes closed job"
+else
+    PASS=$((PASS+1)); echo "ok   - paid filter excludes closed job"
+fi
+
+# Reopen from the list
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ABBOTT_ID" --data-urlencode 'status=open' --data-urlencode 'return=list' --data-urlencode 'group=paid' --data-urlencode 'status_filter=closed')
+OUT=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}")
+check "reopened job visible to techs again" 'Abbott' "$OUT"
+
+# Forward then backward through billing, all from the list
+form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ABBOTT_ID" --data-urlencode 'status=ready_for_billing' --data-urlencode 'return=list' --data-urlencode 'group=active' >/dev/null
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ABBOTT_ID" --data-urlencode 'status=billed' --data-urlencode 'return=list' --data-urlencode 'group=billing')
+check "advance to billed from list" 'Billing' "$OUT"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ABBOTT_ID" --data-urlencode 'status=ready_for_billing' --data-urlencode 'return=list' --data-urlencode 'group=billing')
+check "move back to ready for billing from list" '>Ready for Billing<' "$OUT"
+
+# --- Customer report: fuzzy search and per-customer jobs ---
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=customer-search' --data-urlencode 'q=abb')
+check "customer search is fuzzy" 'Abbott' "$OUT"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=customer-jobs' --data-urlencode 'customer=Abbott')
+check "customer jobs lists the job" 'Abbott - 1 First St' "$OUT"
+
 # --- Jobs with zero tasks must not show a "running" count ---
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=active')
 if [[ "$OUT" == *'0 tasks ('* ]]; then
