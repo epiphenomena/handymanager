@@ -734,17 +734,17 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
         <label>Customer Name *
             <input type="text" name="customer_name" value="<?= $val('customer_name') ?>" required autofocus>
         </label>
-        <label>Location / Address *
-            <input type="text" name="location" value="<?= $val('location') ?>" required
-                placeholder="e.g. 123 Main St">
-        </label>
-        <p class="muted hint">Customer name + location becomes the official job name techs will see.</p>
         <label>Phone Number
             <input type="tel" name="phone" value="<?= $val('phone') ?>">
         </label>
         <label>Call Notes
             <textarea name="call_notes" rows="5" placeholder="What does the customer need?"><?= $val('call_notes') ?></textarea>
         </label>
+        <label>Location / Address *
+            <input type="text" name="location" value="<?= $val('location') ?>" required
+                placeholder="e.g. 123 Main St">
+        </label>
+        <p class="muted hint">Customer name + location becomes the official job name techs will see.</p>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">Open Job</button>
         </div>

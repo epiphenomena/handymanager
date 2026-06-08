@@ -143,17 +143,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="text" id="customer-name" list="customer-list" required autocomplete="off">
                 <datalist id="customer-list"></datalist>
             </label>
-            <label>Location / Address *
-                <input type="text" id="location" list="location-list" placeholder="e.g. 123 Main St" required autocomplete="off">
-                <datalist id="location-list"></datalist>
-            </label>
-            <p class="hint">Customer name + location becomes the job name the techs will see.</p>
             <label>Phone Number
                 <input type="tel" id="phone" autocomplete="off">
             </label>
             <label>Call Notes
                 <textarea id="call-notes" rows="5" placeholder="What does the customer need?"></textarea>
             </label>
+            <label>Location / Address *
+                <input type="text" id="location" list="location-list" placeholder="e.g. 123 Main St" required autocomplete="off">
+                <datalist id="location-list"></datalist>
+            </label>
+            <p class="hint">Customer name + location becomes the job name the techs will see.</p>
             <button type="submit">Open Job</button>
         </form>
 
