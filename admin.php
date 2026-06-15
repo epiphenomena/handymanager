@@ -215,8 +215,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exportJobJson((int)$_POST['id']);
             break;
 
-        case 'export-job-md':
-            exportJobMarkdown((int)$_POST['id']);
+        case 'job-text':
+            renderJobText((int)$_POST['id']);
+            break;
+
+        case 'job-text-close':
+            // empties the inline text slot
             break;
 
         default:
@@ -275,21 +279,22 @@ function renderJobsView($group, $statusFilter = '', $message = null, $isError = 
     $jobs = getJobsByStatus($statuses);
     ?>
     <?= flash($message, $isError) ?>
-    <div class="view-header">
-        <h2><?= h(GROUP_TITLES[$group] ?? 'Jobs') ?></h2>
-        <span class="muted"><?= count($jobs) ?> job<?= count($jobs) === 1 ? '' : 's' ?></span>
+    <div class="jobs-sticky">
+        <div class="view-header">
+            <h2><?= h(GROUP_TITLES[$group] ?? 'Jobs') ?></h2>
+            <span class="muted"><?= count($jobs) ?> job<?= count($jobs) === 1 ? '' : 's' ?></span>
+            <?php if (count($groupStatuses) > 1): ?>
+            <div class="filter-pills">
+                <button class="pill <?= $statusFilter === '' ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
+                    hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => ''])) ?>'>All</button>
+                <?php foreach ($groupStatuses as $st): ?>
+                <button class="pill <?= $statusFilter === $st ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
+                    hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $st])) ?>'><?= h(STATUS_LABELS[$st]) ?></button>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+        </div>
     </div>
-
-    <?php if (count($groupStatuses) > 1): ?>
-    <div class="filter-pills">
-        <button class="pill <?= $statusFilter === '' ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
-            hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => ''])) ?>'>All</button>
-        <?php foreach ($groupStatuses as $st): ?>
-        <button class="pill <?= $statusFilter === $st ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
-            hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $st])) ?>'><?= h(STATUS_LABELS[$st]) ?></button>
-        <?php endforeach; ?>
-    </div>
-    <?php endif; ?>
 
     <?php if (empty($jobs)): ?>
         <p class="empty-state">No jobs here.</p>
@@ -440,20 +445,18 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
             <?php renderStatusButtons($job, ['return' => 'detail']); ?>
             <button class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#content"
                 hx-vals='{"action":"job-edit-form","id":<?= (int)$job['id'] ?>}'>Edit Details</button>
+            <button class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#job-text-slot" hx-swap="innerHTML"
+                hx-vals='{"action":"job-text","id":<?= (int)$job['id'] ?>}'>Copy as Text</button>
             <form method="post" action="admin.php" class="inline-form">
                 <input type="hidden" name="action" value="export-job-json">
                 <input type="hidden" name="token" value="">
                 <input type="hidden" name="id" value="<?= (int)$job['id'] ?>">
                 <button type="submit" class="btn btn-ghost btn-sm">JSON ↓</button>
             </form>
-            <form method="post" action="admin.php" class="inline-form">
-                <input type="hidden" name="action" value="export-job-md">
-                <input type="hidden" name="token" value="">
-                <input type="hidden" name="id" value="<?= (int)$job['id'] ?>">
-                <button type="submit" class="btn btn-ghost btn-sm">Markdown ↓</button>
-            </form>
         </div>
     </div>
+
+    <div id="job-text-slot"></div>
 
     <div class="status-dates">
         <span>Opened <?= h(fmtDt($job['opened_at'])) ?></span>
@@ -1057,51 +1060,70 @@ function exportJobJson($jobId) {
     echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 }
 
-function exportJobMarkdown($jobId) {
-    $data = jobExportData($jobId);
-    if (!$data) {
-        http_response_code(404);
-        echo 'Job not found';
-        return;
-    }
+// Build a clean, plain-text (no markup) summary of a job, suitable for
+// pasting into any other app.
+function jobPlainText($data) {
     $job = $data['job'];
 
-    $md = "# {$job['name']}\n\n";
-    $md .= "- **Status:** {$job['status_label']}\n";
-    if ($job['customer_name']) $md .= "- **Customer:** {$job['customer_name']}\n";
-    if ($job['phone']) $md .= "- **Phone:** {$job['phone']}\n";
-    $md .= "- **Opened:** " . fmtDt($job['opened_at']) . "\n";
-    if ($job['ready_for_billing_at']) $md .= "- **Ready for billing:** " . fmtDate($job['ready_for_billing_at']) . "\n";
-    if ($job['billed_at']) $md .= "- **Billed:** " . fmtDate($job['billed_at']) . "\n";
-    if ($job['paid_at']) $md .= "- **Paid:** " . fmtDate($job['paid_at']) . "\n";
-    if ($job['closed_at']) $md .= "- **Closed:** " . fmtDate($job['closed_at']) . "\n";
-    $md .= "- **Work:** {$data['summary']['task_count']} task(s), {$data['summary']['total_hours']} hours\n";
+    $t = $job['name'] . "\n";
+    $t .= str_repeat('=', mb_strlen($job['name'])) . "\n\n";
+    $t .= "Status: {$job['status_label']}\n";
+    if ($job['customer_name']) $t .= "Customer: {$job['customer_name']}\n";
+    if ($job['phone']) $t .= "Phone: {$job['phone']}\n";
+    $t .= "Opened: " . fmtDt($job['opened_at']) . "\n";
+    if ($job['ready_for_billing_at']) $t .= "Ready for billing: " . fmtDate($job['ready_for_billing_at']) . "\n";
+    if ($job['billed_at']) $t .= "Billed: " . fmtDate($job['billed_at']) . "\n";
+    if ($job['paid_at']) $t .= "Paid: " . fmtDate($job['paid_at']) . "\n";
+    if ($job['closed_at']) $t .= "Closed: " . fmtDate($job['closed_at']) . "\n";
+    $t .= "Work: {$data['summary']['task_count']} task(s), {$data['summary']['total_hours']} hours\n";
 
     if ($job['call_notes']) {
-        $md .= "\n## Call Notes\n\n{$job['call_notes']}\n";
+        $t .= "\nCall Notes:\n{$job['call_notes']}\n";
     }
     if ($job['admin_notes']) {
-        $md .= "\n## Job Notes\n\n{$job['admin_notes']}\n";
+        $t .= "\nJob Notes:\n{$job['admin_notes']}\n";
     }
 
-    $md .= "\n## Task Log\n";
+    $t .= "\nTask Log:\n";
     if (empty($data['tasks'])) {
-        $md .= "\n_No tasks recorded._\n";
+        $t .= "(No tasks recorded.)\n";
     }
     foreach ($data['tasks'] as $task) {
         $when = fmtDt($task['start_time']);
         $when .= $task['end_time']
-            ? ' → ' . fmtDt($task['end_time']) . " ({$task['hours']} h)"
-            : ' — in progress';
-        $md .= "\n### {$task['tech_name']} — $when\n";
+            ? ' to ' . fmtDt($task['end_time']) . " ({$task['hours']} h)"
+            : ' (in progress)';
+        $t .= "\n{$task['tech_name']} - $when\n";
         if ($task['notes']) {
-            $md .= "\n{$task['notes']}\n";
+            $t .= "{$task['notes']}\n";
         }
     }
 
-    header('Content-Type: text/markdown; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . csvFilename('job-' . $jobId . '-' . $job['name']) . '.md"');
-    echo $md;
+    return $t;
+}
+
+// Render the plain-text summary inline in a copiable, read-only textarea.
+function renderJobText($jobId) {
+    $data = jobExportData($jobId);
+    if (!$data) {
+        echo '<div class="flash flash-error">Job not found</div>';
+        return;
+    }
+    $text = jobPlainText($data);
+    $rows = max(8, min(30, substr_count($text, "\n") + 2));
+    ?>
+    <div class="panel job-text-panel">
+        <div class="panel-title">
+            <label>Plain Text</label>
+            <span>
+                <button class="btn btn-primary btn-sm" onclick="copyJobText(this)">Copy</button>
+                <button class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#job-text-slot" hx-swap="innerHTML"
+                    hx-vals='{"action":"job-text-close"}'>Close</button>
+            </span>
+        </div>
+        <textarea class="job-text" readonly rows="<?= $rows ?>" onclick="this.select()"><?= h($text) ?></textarea>
+    </div>
+    <?php
 }
 
 function exportTechCsv($tech, $month) {
@@ -1267,6 +1289,29 @@ function exportTechCsv($tech, $month) {
             margin-bottom: 16px;
         }
 
+        /* Sticky heading + filters on the job tabs. Sits just below the
+           topbar (whose live height is tracked in --topbar-h). */
+        .jobs-sticky {
+            position: sticky;
+            top: var(--topbar-h, 56px);
+            z-index: 5;
+            background: var(--bg);
+            margin: -24px -20px 16px;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .jobs-sticky .view-header {
+            margin: 0;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .jobs-sticky .filter-pills {
+            margin: 0;
+            flex-basis: 100%;
+        }
+
         h2 { margin: 0; font-size: 22px; }
         h3 { margin: 28px 0 12px; font-size: 17px; }
         h4 { margin: 20px 0 10px; font-size: 15px; }
@@ -1371,6 +1416,18 @@ function exportTechCsv($tech, $month) {
         }
 
         #customer-search { max-width: 360px; }
+
+        .job-text-panel { margin-top: 12px; }
+        textarea.job-text {
+            width: 100%;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 16px;          /* 16px avoids iOS zoom when we focus it to copy */
+            line-height: 1.45;
+            white-space: pre;
+            overflow-wrap: normal;
+            resize: vertical;
+            background: var(--bg);
+        }
 
         /* Panels & forms */
         .panel {
@@ -1551,6 +1608,7 @@ function exportTechCsv($tech, $month) {
         @media (max-width: 600px) {
             .wrap { padding: 16px 12px 48px; }
             .topbar { padding: 10px 12px; gap: 10px; }
+            .jobs-sticky { margin: -16px -12px 12px; padding: 10px 12px; }
         }
     </style>
 </head>
@@ -1599,6 +1657,31 @@ function exportTechCsv($tech, $month) {
         const logoutBtn = document.getElementById('logout-btn');
         const menuToggle = document.getElementById('menu-toggle');
         const topbarMenu = document.getElementById('topbar-menu');
+        const topbar = document.querySelector('.topbar');
+
+        // Keep the sticky job header offset in sync with the topbar height
+        // (the topbar is one row on desktop, two on mobile).
+        function syncTopbarHeight() {
+            document.documentElement.style.setProperty('--topbar-h', topbar.offsetHeight + 'px');
+        }
+        syncTopbarHeight();
+        window.addEventListener('resize', syncTopbarHeight);
+
+        // Copy the plain-text job summary. Works on mobile: select the
+        // textarea then use the clipboard API, falling back to execCommand.
+        window.copyJobText = function(btn) {
+            const textarea = btn.closest('.panel').querySelector('textarea');
+            textarea.focus();
+            textarea.select();
+            textarea.setSelectionRange(0, textarea.value.length); // iOS needs the range
+            const done = () => { btn.textContent = 'Copied ✓'; setTimeout(() => btn.textContent = 'Copy', 1500); };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(textarea.value).then(done, () => { document.execCommand('copy'); done(); });
+            } else {
+                document.execCommand('copy');
+                done();
+            }
+        };
 
         // Mobile: the right-side links live behind the ⋮ dropdown
         menuToggle.addEventListener('click', function(e) {
@@ -1654,6 +1737,7 @@ function exportTechCsv($tech, $month) {
             gate.style.display = 'none';
             nav.style.display = '';
             logoutBtn.style.display = '';
+            syncTopbarHeight(); // nav is now visible, so the topbar is taller
             htmx.ajax('POST', 'admin.php', { target: '#content', values: { action: 'view-jobs', group: 'active' } });
         }
 

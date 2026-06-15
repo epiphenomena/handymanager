@@ -69,7 +69,9 @@ token (kept in localStorage) attached and verified on **every** request.
   notes; status transition buttons (ready for billing / billed / paid, plus
   on hold and reopen); edit job details; add tasks directly (for work a tech
   reported outside the app); edit/delete tasks; delete job; export the whole
-  job as JSON (for feeding to an AI) or formatted Markdown.
+  job as JSON (for feeding to an AI), or view it as copiable plain text
+  inline (a "Copy as Text" button shows a read-only textarea with a Copy
+  button — easy to paste into any app on mobile).
 - **Log Call** — opens a job: customer name, location (together they become
   the official job name), phone, call notes. Customer/location autocomplete
   from past jobs (freeform allowed); picking a known customer prefills

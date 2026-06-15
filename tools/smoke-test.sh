@@ -285,9 +285,15 @@ OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-job-j
 check "job JSON export has tasks" '"tasks"' "$OUT"
 check "job JSON export has summary" '"total_hours"' "$OUT"
 
-OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-job-md' --data-urlencode "id=$JOB_ID")
-check "job markdown export" '# Smith - 412 Oak Ave' "$OUT"
-check "job markdown has task log" '## Task Log' "$OUT"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=job-text' --data-urlencode "id=$JOB_ID")
+check "job plain-text view renders textarea" '<textarea class="job-text"' "$OUT"
+check "job plain-text has no markdown heading" 'Status: ' "$OUT"
+check "job plain-text has task log" 'Task Log:' "$OUT"
+if [[ "$OUT" == *'## '* || "$OUT" == *'**'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - plain text contains no markdown syntax"
+else
+    PASS=$((PASS+1)); echo "ok   - plain text contains no markdown syntax"
+fi
 
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-months-csv')
 check "months CSV export" 'Month,"Jobs Completed"' "$OUT"
