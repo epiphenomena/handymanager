@@ -45,7 +45,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     switch ($action) {
         case 'view-jobs':
-            renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '');
+            renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '',
+                null, false, !empty($_POST['cards_only']));
             break;
 
         case 'view-job':
@@ -61,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Status can be changed from a job list or from the detail view;
             // re-render whichever the request came from.
             if (($_POST['return'] ?? '') === 'list') {
-                renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '',
+                renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '',
                     $ok ? null : $message, !$ok);
             } else {
                 renderJobDetail((int)$_POST['id'], $ok ? 'Status updated' : $message, !$ok);
@@ -90,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         case 'delete-job':
             deleteJob((int)$_POST['id']);
-            renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', 'Job deleted');
+            renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '', 'Job deleted');
             break;
 
         case 'customer-search':
@@ -270,36 +271,60 @@ function flash($message, $isError = false) {
 // Fragments
 // ---------------------------------------------------------------------------
 
-function renderJobsView($group, $statusFilter = '', $message = null, $isError = false) {
+function renderJobsView($group, $statusFilter = '', $q = '', $message = null, $isError = false, $cardsOnly = false) {
     $group = isset(STATUS_GROUPS[$group]) ? $group : 'active';
     $groupStatuses = STATUS_GROUPS[$group];
     // A status filter narrows the group to a single status (must belong to it)
     $statuses = ($statusFilter !== '' && in_array($statusFilter, $groupStatuses, true))
         ? [$statusFilter] : $groupStatuses;
-    $jobs = getJobsByStatus($statuses);
+    $jobs = getJobsByStatus($statuses, $q);
+
+    // Live search re-renders only the cards (so the search box keeps focus)
+    // and updates the header count out-of-band.
+    if ($cardsOnly) {
+        renderJobCards($jobs, $group, $statusFilter, $q);
+        ?>
+        <span id="job-count" class="muted" hx-swap-oob="true"><?= count($jobs) ?> job<?= count($jobs) === 1 ? '' : 's' ?></span>
+        <?php
+        return;
+    }
+
+    // Carry the current search through pill clicks so it isn't lost
+    $pillVals = fn($st) => h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $st, 'q' => $q]));
     ?>
     <?= flash($message, $isError) ?>
     <div class="jobs-sticky">
         <div class="view-header">
             <h2><?= h(GROUP_TITLES[$group] ?? 'Jobs') ?></h2>
-            <span class="muted"><?= count($jobs) ?> job<?= count($jobs) === 1 ? '' : 's' ?></span>
+            <span id="job-count" class="muted"><?= count($jobs) ?> job<?= count($jobs) === 1 ? '' : 's' ?></span>
+            <input type="search" class="job-search" name="q" value="<?= h($q) ?>" placeholder="Search job name…"
+                autocomplete="off" hx-post="admin.php" hx-target="#job-cards" hx-swap="outerHTML"
+                hx-trigger="keyup changed delay:200ms, search"
+                hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $statusFilter, 'cards_only' => 1])) ?>'>
             <?php if (count($groupStatuses) > 1): ?>
             <div class="filter-pills">
                 <button class="pill <?= $statusFilter === '' ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
-                    hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => ''])) ?>'>All</button>
+                    hx-vals='<?= $pillVals('') ?>'>All</button>
                 <?php foreach ($groupStatuses as $st): ?>
                 <button class="pill <?= $statusFilter === $st ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
-                    hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $st])) ?>'><?= h(STATUS_LABELS[$st]) ?></button>
+                    hx-vals='<?= $pillVals($st) ?>'><?= h(STATUS_LABELS[$st]) ?></button>
                 <?php endforeach; ?>
             </div>
             <?php endif; ?>
         </div>
     </div>
 
-    <?php if (empty($jobs)): ?>
-        <p class="empty-state">No jobs here.</p>
-    <?php endif; ?>
-    <div class="job-cards">
+    <?php renderJobCards($jobs, $group, $statusFilter, $q); ?>
+    <?php
+}
+
+// The job cards list (its own container so live search can swap just this part)
+function renderJobCards($jobs, $group, $statusFilter, $q) {
+    ?>
+    <div class="job-cards" id="job-cards">
+        <?php if (empty($jobs)): ?>
+            <p class="empty-state"><?= $q !== '' ? 'No jobs match your search.' : 'No jobs here.' ?></p>
+        <?php endif; ?>
         <?php foreach ($jobs as $job): ?>
         <div class="job-card" hx-post="admin.php" hx-vals='{"action":"view-job","id":<?= (int)$job['id'] ?>}'
              hx-target="#content" hx-swap="innerHTML show:window:top">
@@ -322,7 +347,7 @@ function renderJobsView($group, $statusFilter = '', $message = null, $isError = 
             <div class="job-card-notes"><?= h(mb_strimwidth($job['admin_notes'], 0, 220, '…')) ?></div>
             <?php endif; ?>
             <div class="job-card-actions">
-                <?php renderStatusButtons($job, ['return' => 'list', 'group' => $group, 'status_filter' => $statusFilter], 'btn-xs'); ?>
+                <?php renderStatusButtons($job, ['return' => 'list', 'group' => $group, 'status_filter' => $statusFilter, 'q' => $q], 'btn-xs'); ?>
             </div>
         </div>
         <?php endforeach; ?>
@@ -1310,6 +1335,25 @@ function exportTechCsv($tech, $month) {
         .jobs-sticky .filter-pills {
             margin: 0;
             flex-basis: 100%;
+        }
+
+        .job-search {
+            width: auto;
+            flex: 1;
+            min-width: 140px;
+            max-width: 280px;
+            margin-left: auto;     /* push to the right of the heading/count */
+            padding: 7px 10px;
+            font-size: 16px;       /* avoid iOS zoom on focus */
+        }
+
+        @media (max-width: 600px) {
+            .job-search {
+                flex-basis: 100%;
+                max-width: none;
+                margin-left: 0;
+                order: 3;           /* full-width row under the heading */
+            }
         }
 
         h2 { margin: 0; font-size: 22px; }

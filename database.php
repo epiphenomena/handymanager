@@ -251,10 +251,18 @@ function getJobById($jobId) {
     return $stmt->fetch() ?: null;
 }
 
-// Jobs (non-system) in the given statuses, with task aggregates
-function getJobsByStatus(array $statuses) {
+// Jobs (non-system) in the given statuses, with task aggregates.
+// $search does a partial, token-based match on the job name: each
+// whitespace-separated token must appear (any order).
+function getJobsByStatus(array $statuses, $search = '') {
     $pdo = getDbConnection();
     $placeholders = implode(',', array_fill(0, count($statuses), '?'));
+    $where = ['j.is_system = 0', "j.status IN ($placeholders)"];
+    $params = array_values($statuses);
+    foreach (preg_split('/\s+/', trim($search), -1, PREG_SPLIT_NO_EMPTY) as $token) {
+        $where[] = 'LOWER(j.name) LIKE ?';
+        $params[] = '%' . mb_strtolower($token) . '%';
+    }
     $stmt = $pdo->prepare("
         SELECT j.*,
                COUNT(t.id) AS task_count,
@@ -263,11 +271,11 @@ function getJobsByStatus(array $statuses) {
                MAX(COALESCE(t.end_time, t.start_time)) AS last_activity
         FROM jobs j
         LEFT JOIN tasks t ON t.job_id = j.id
-        WHERE j.is_system = 0 AND j.status IN ($placeholders)
+        WHERE " . implode(' AND ', $where) . "
         GROUP BY j.id
         ORDER BY COALESCE(MAX(COALESCE(t.end_time, t.start_time)), j.opened_at) DESC
     ");
-    $stmt->execute(array_values($statuses));
+    $stmt->execute($params);
     return $stmt->fetchAll();
 }
 

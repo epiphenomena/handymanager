@@ -60,11 +60,13 @@ token (kept in localStorage) attached and verified on **every** request.
 
 - **Active / Billing / Paid** — jobs grouped by status (active = open /
   in progress / on hold; billing = ready for billing / billed; paid =
-  paid / closed), newest first. Each tab has status sub-filter pills, and
-  every job card carries status buttons so jobs can be moved forward or
-  backward through the stages (resume, close, mark billed, back to ready
-  for billing, etc.) directly from the list. Cards show status, task
-  counts, hours, and the admin job notes.
+  paid / closed), newest first. Each tab has a sticky header with status
+  sub-filter pills and a job-name search box (partial, token-based —
+  "smith oak" matches "Smith - 412 Oak Ave"); the two compose. Every job
+  card carries status buttons so jobs can be moved forward or backward
+  through the stages (resume, close, mark billed, back to ready for
+  billing, etc.) directly from the list. Cards show status, task counts,
+  hours, and the admin job notes.
 - **Job detail** — timeline of the opening call and every task; editable job
   notes; status transition buttons (ready for billing / billed / paid, plus
   on hold and reopen); edit job details; add tasks directly (for work a tech

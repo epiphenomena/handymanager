@@ -217,6 +217,26 @@ check "advance to billed from list" 'Billing' "$OUT"
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ABBOTT_ID" --data-urlencode 'status=ready_for_billing' --data-urlencode 'return=list' --data-urlencode 'group=billing')
 check "move back to ready for billing from list" '>Ready for Billing<' "$OUT"
 
+# --- Job name search on the tabs (partial, token-based) ---
+# Abbott job ("Abbott - 1 First St") is in the billing group by now.
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=billing' --data-urlencode 'q=abb' --data-urlencode 'cards_only=1')
+check "partial job search matches" 'Abbott - 1 First St' "$OUT"
+check "search updates count out-of-band" 'id="job-count"' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=billing' --data-urlencode 'q=first abbott' --data-urlencode 'cards_only=1')
+check "multi-token search matches any order" 'Abbott - 1 First St' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=billing' --data-urlencode 'q=zzzznomatch' --data-urlencode 'cards_only=1')
+check "search with no matches" 'No jobs match your search' "$OUT"
+
+# Search composes with the status filter (wrong status filter -> no match)
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=billing' --data-urlencode 'status_filter=billed' --data-urlencode 'q=abbott' --data-urlencode 'cards_only=1')
+if [[ "$OUT" == *'Abbott - 1 First St'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - search composes with status filter"
+else
+    PASS=$((PASS+1)); echo "ok   - search composes with status filter"
+fi
+
 # --- Customer report: fuzzy search and per-customer jobs ---
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=customer-search' --data-urlencode 'q=abb')
 check "customer search is fuzzy" 'Abbott' "$OUT"
