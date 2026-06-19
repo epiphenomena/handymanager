@@ -86,6 +86,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         .hint { color: #6b7280; font-size: 13px; font-weight: 400; margin: -8px 0 0; }
 
+        /* Custom autocomplete dropdown */
+        .hm-ac-wrap { position: relative; }
+        .hm-ac-list {
+            position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+            max-height: min(260px, 45vh); overflow-y: auto;
+            background: #fff; border: 1px solid #ccc; border-top: none;
+            border-radius: 0 0 6px 6px; box-shadow: 0 4px 10px rgba(0,0,0,.12);
+            -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+        }
+        .hm-ac-item { padding: 12px; font-size: 16px; cursor: pointer; border-bottom: 1px solid #eee; }
+        .hm-ac-item:last-child { border-bottom: none; }
+        .hm-ac-item:hover, .hm-ac-item.active { background: #e8f0fe; }
+
         button {
             font: inherit;
             font-weight: 600;
@@ -140,8 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <form id="call-form" style="display:none">
             <label>Customer Name *
-                <input type="text" id="customer-name" list="customer-list" required autocomplete="off">
-                <datalist id="customer-list"></datalist>
+                <input type="text" id="customer-name" required autocomplete="off">
             </label>
             <label>Phone Number
                 <input type="tel" id="phone" autocomplete="off">
@@ -150,8 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <textarea id="call-notes" rows="5" placeholder="What does the customer need?"></textarea>
             </label>
             <label>Location / Address *
-                <input type="text" id="location" list="location-list" placeholder="e.g. 123 Main St" required autocomplete="off">
-                <datalist id="location-list"></datalist>
+                <input type="text" id="location" placeholder="e.g. 123 Main St" required autocomplete="off">
             </label>
             <p class="hint">Customer name + location becomes the job name the techs will see.</p>
             <button type="submit">Open Job</button>
@@ -160,6 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <button id="change-token" style="display:none">Change token</button>
     </div>
 
+    <script src="js/autocomplete.js"></script>
     <script>
         const TOKEN_KEY = 'handymanager_admin_token';
         const tokenForm = document.getElementById('token-form');
@@ -188,9 +200,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             loadSuggestions();
         }
 
-        // Fill the datalists with known customers/locations. Suggestions only -
+        // Known customers/locations for the autocomplete. Suggestions only -
         // new (freeform) entries are always allowed.
         let customersByName = {};
+        let customerNames = [];
+        let locationNames = [];
+
+        const customerInput = document.getElementById('customer-name');
+        const locationInput = document.getElementById('location');
+        const phoneInput = document.getElementById('phone');
+
+        // Custom dropdowns (native datalist is unreliable across browsers)
+        HMAutocomplete.attach(customerInput, { getItems: () => customerNames });
+        HMAutocomplete.attach(locationInput, { getItems: () => locationNames });
 
         function loadSuggestions() {
             fetch('log-call.php', {
@@ -204,33 +226,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             .then(response => response.json())
             .then(data => {
                 if (!data.success) return;
-
                 customersByName = {};
-                const customerList = document.getElementById('customer-list');
-                customerList.innerHTML = '';
-                (data.customers || []).forEach(customer => {
-                    customersByName[customer.name.toLowerCase()] = customer;
-                    const option = document.createElement('option');
-                    option.value = customer.name;
-                    customerList.appendChild(option);
+                customerNames = (data.customers || []).map(c => {
+                    customersByName[c.name.toLowerCase()] = c;
+                    return c.name;
                 });
-
-                const locationList = document.getElementById('location-list');
-                locationList.innerHTML = '';
-                (data.locations || []).forEach(value => {
-                    const option = document.createElement('option');
-                    option.value = value;
-                    locationList.appendChild(option);
-                });
+                locationNames = data.locations || [];
             })
             .catch(error => console.error('Error loading suggestions:', error));
         }
-
-        // When a known customer is picked, prefill their last location and
-        // phone - but never overwrite something typed by hand.
-        const customerInput = document.getElementById('customer-name');
-        const locationInput = document.getElementById('location');
-        const phoneInput = document.getElementById('phone');
 
         function maybePrefill(input, value) {
             if (!value) return;

@@ -763,13 +763,8 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
     <form class="panel form-stack" hx-post="admin.php" hx-target="#content">
         <input type="hidden" name="action" value="log-call">
         <label>Customer Name *
-            <input type="text" id="lc-customer" name="customer_name" list="lc-customers"
+            <input type="text" id="lc-customer" name="customer_name"
                 value="<?= $val('customer_name') ?>" autocomplete="off" required autofocus>
-            <datalist id="lc-customers">
-                <?php foreach ($suggestions['customers'] as $c): ?>
-                <option value="<?= h($c['name']) ?>"></option>
-                <?php endforeach; ?>
-            </datalist>
         </label>
         <label>Phone Number
             <input type="tel" id="lc-phone" name="phone" value="<?= $val('phone') ?>" autocomplete="off">
@@ -778,13 +773,8 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
             <textarea name="call_notes" rows="5" placeholder="What does the customer need?"><?= $val('call_notes') ?></textarea>
         </label>
         <label>Location / Address *
-            <input type="text" id="lc-location" name="location" list="lc-locations"
+            <input type="text" id="lc-location" name="location"
                 value="<?= $val('location') ?>" autocomplete="off" required placeholder="e.g. 123 Main St">
-            <datalist id="lc-locations">
-                <?php foreach ($suggestions['locations'] as $loc): ?>
-                <option value="<?= h($loc) ?>"></option>
-                <?php endforeach; ?>
-            </datalist>
         </label>
         <p class="muted hint">Customer name + location becomes the official job name techs will see.</p>
         <div class="form-actions">
@@ -793,17 +783,23 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
     </form>
     <p class="muted">Standalone version of this form for the office: <a href="log-call.php">log-call.php</a></p>
     <script>
-    // Picking a known customer prefills their last location and phone, but
-    // never overwrites something typed by hand. Wrapped in an IIFE so it can
-    // run again safely each time htmx swaps this form in.
+    // Custom autocomplete dropdowns (native datalist is unreliable). Picking
+    // a known customer prefills their last location and phone, but never
+    // overwrites something typed by hand. Wrapped in an IIFE so it can run
+    // again safely each time htmx swaps this form in.
     (function () {
-        var byName = <?= json_encode(array_column($suggestions['customers'], null, 'name'), JSON_UNESCAPED_UNICODE) ?>;
+        var customers = <?= json_encode($suggestions['customers'], JSON_UNESCAPED_UNICODE) ?>;
+        var locations = <?= json_encode($suggestions['locations'], JSON_UNESCAPED_UNICODE) ?>;
         var lower = {};
-        Object.keys(byName).forEach(function (k) { lower[k.toLowerCase()] = byName[k]; });
+        var customerNames = customers.map(function (c) { lower[c.name.toLowerCase()] = c; return c.name; });
+
         var customer = document.getElementById('lc-customer');
         var location = document.getElementById('lc-location');
         var phone = document.getElementById('lc-phone');
-        if (!customer) return;
+        if (!customer || !window.HMAutocomplete) return;
+
+        HMAutocomplete.attach(customer, { getItems: function () { return customerNames; } });
+        HMAutocomplete.attach(location, { getItems: function () { return locations; } });
 
         function maybePrefill(input, value) {
             if (!value) return;
@@ -1234,6 +1230,7 @@ function exportTechCsv($tech, $month) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HandyManager Admin</title>
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js" crossorigin="anonymous"></script>
+    <script src="js/autocomplete.js"></script>
     <style>
         :root {
             --bg: #f4f5f7;
@@ -1508,6 +1505,19 @@ function exportTechCsv($tech, $month) {
         }
 
         #customer-search { max-width: 360px; }
+
+        /* Custom autocomplete dropdown (used on the Log Call form) */
+        .hm-ac-wrap { position: relative; }
+        .hm-ac-list {
+            position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+            max-height: min(260px, 45vh); overflow-y: auto;
+            background: var(--surface); border: 1px solid var(--border); border-top: none;
+            border-radius: 0 0 6px 6px; box-shadow: 0 4px 10px rgba(0,0,0,.12);
+            -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+        }
+        .hm-ac-item { padding: 11px 12px; font-size: 16px; cursor: pointer; border-bottom: 1px solid var(--border); }
+        .hm-ac-item:last-child { border-bottom: none; }
+        .hm-ac-item:hover, .hm-ac-item.active { background: var(--bg); }
 
         .job-text-panel { margin-top: 12px; }
         textarea.job-text {

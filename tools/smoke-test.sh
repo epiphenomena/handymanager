@@ -133,12 +133,11 @@ check "suggestions include customer" 'Patel' "$OUT"
 check "suggestions include location" '7 Birch Ct' "$OUT"
 check "suggestions carry phone for prefill" '555-0103' "$OUT"
 
-# Admin Log Call form ships datalists + prefill map server-side
+# Admin Log Call form wires the custom autocomplete + embeds suggestion data
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=log-call-form')
-check "admin log-call form has customer datalist" 'list="lc-customers"' "$OUT"
-check "admin log-call form has location datalist" 'list="lc-locations"' "$OUT"
-check "admin log-call form has datalist options" '<option value="Patel">' "$OUT"
-check "admin log-call form embeds prefill map" 'var byName =' "$OUT"
+check "admin log-call form attaches autocomplete" 'HMAutocomplete.attach' "$OUT"
+check "admin log-call form embeds customers" '"name":"Patel"' "$OUT"
+check "admin log-call form embeds locations" '7 Birch Ct' "$OUT"
 
 # --- Admin can add a task directly (work reported outside the tech app) ---
 OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Lee\",\"location\":\"9 Pine Rd\"}")
