@@ -754,23 +754,37 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
     $val = function ($key) use ($old, $isError) {
         return $isError ? h($old[$key] ?? '') : '';
     };
+    // Known customers/locations for autocomplete (freeform entry still allowed).
+    // Rendered server-side so the datalists are ready without a fetch.
+    $suggestions = getCallSuggestions();
     ?>
     <div class="view-header"><h2>Log a Service Call</h2></div>
     <?= flash($message, $isError) ?>
     <form class="panel form-stack" hx-post="admin.php" hx-target="#content">
         <input type="hidden" name="action" value="log-call">
         <label>Customer Name *
-            <input type="text" name="customer_name" value="<?= $val('customer_name') ?>" required autofocus>
+            <input type="text" id="lc-customer" name="customer_name" list="lc-customers"
+                value="<?= $val('customer_name') ?>" autocomplete="off" required autofocus>
+            <datalist id="lc-customers">
+                <?php foreach ($suggestions['customers'] as $c): ?>
+                <option value="<?= h($c['name']) ?>"></option>
+                <?php endforeach; ?>
+            </datalist>
         </label>
         <label>Phone Number
-            <input type="tel" name="phone" value="<?= $val('phone') ?>">
+            <input type="tel" id="lc-phone" name="phone" value="<?= $val('phone') ?>" autocomplete="off">
         </label>
         <label>Call Notes
             <textarea name="call_notes" rows="5" placeholder="What does the customer need?"><?= $val('call_notes') ?></textarea>
         </label>
         <label>Location / Address *
-            <input type="text" name="location" value="<?= $val('location') ?>" required
-                placeholder="e.g. 123 Main St">
+            <input type="text" id="lc-location" name="location" list="lc-locations"
+                value="<?= $val('location') ?>" autocomplete="off" required placeholder="e.g. 123 Main St">
+            <datalist id="lc-locations">
+                <?php foreach ($suggestions['locations'] as $loc): ?>
+                <option value="<?= h($loc) ?>"></option>
+                <?php endforeach; ?>
+            </datalist>
         </label>
         <p class="muted hint">Customer name + location becomes the official job name techs will see.</p>
         <div class="form-actions">
@@ -778,6 +792,40 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
         </div>
     </form>
     <p class="muted">Standalone version of this form for the office: <a href="log-call.php">log-call.php</a></p>
+    <script>
+    // Picking a known customer prefills their last location and phone, but
+    // never overwrites something typed by hand. Wrapped in an IIFE so it can
+    // run again safely each time htmx swaps this form in.
+    (function () {
+        var byName = <?= json_encode(array_column($suggestions['customers'], null, 'name'), JSON_UNESCAPED_UNICODE) ?>;
+        var lower = {};
+        Object.keys(byName).forEach(function (k) { lower[k.toLowerCase()] = byName[k]; });
+        var customer = document.getElementById('lc-customer');
+        var location = document.getElementById('lc-location');
+        var phone = document.getElementById('lc-phone');
+        if (!customer) return;
+
+        function maybePrefill(input, value) {
+            if (!value) return;
+            if (input.value.trim() === '' || input.dataset.autofilled === '1') {
+                input.value = value;
+                input.dataset.autofilled = '1';
+            }
+        }
+        customer.addEventListener('input', function () {
+            var known = lower[this.value.trim().toLowerCase()];
+            if (known) {
+                maybePrefill(location, known.location);
+                maybePrefill(phone, known.phone);
+            }
+        });
+        [location, phone].forEach(function (input) {
+            input.addEventListener('input', function (e) {
+                if (e.isTrusted) delete this.dataset.autofilled;
+            });
+        });
+    })();
+    </script>
     <?php
 }
 

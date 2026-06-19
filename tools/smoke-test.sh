@@ -133,6 +133,13 @@ check "suggestions include customer" 'Patel' "$OUT"
 check "suggestions include location" '7 Birch Ct' "$OUT"
 check "suggestions carry phone for prefill" '555-0103' "$OUT"
 
+# Admin Log Call form ships datalists + prefill map server-side
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=log-call-form')
+check "admin log-call form has customer datalist" 'list="lc-customers"' "$OUT"
+check "admin log-call form has location datalist" 'list="lc-locations"' "$OUT"
+check "admin log-call form has datalist options" '<option value="Patel">' "$OUT"
+check "admin log-call form embeds prefill map" 'var byName =' "$OUT"
+
 # --- Admin can add a task directly (work reported outside the tech app) ---
 OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Lee\",\"location\":\"9 Pine Rd\"}")
 JOB3_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Lee")!==false) { echo $j["id"]; break; }')
