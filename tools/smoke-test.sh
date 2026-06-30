@@ -306,10 +306,75 @@ check "clock job cannot be marked for billing" 'cannot change status' "$OUT"
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-job' --data-urlencode "id=$CLOCK_ID")
 check "clock job detail redirects to clock view" 'Clock In/Out' "$OUT"
 
+# --- Tags: curated vocabulary, assignment, list filtering, cascade ---
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=manage-tags')
+check "manage-tags lists seeded tags" 'Plumbing' "$OUT"
+check "manage-tags lists seeded HVAC"  'HVAC' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=create-tag' --data-urlencode 'name=Roofing')
+check "create tag adds to vocabulary" 'Roofing' "$OUT"
+
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=create-tag' --data-urlencode 'name=plumbing')
+check "duplicate tag rejected (case-insensitive)" 'already exists' "$OUT"
+
+# Tag ids from the throwaway db (read-only; the server isn't writing here)
+HVAC_ID=$(HANDYMANAGER_DB="$DB" php -r 'require "database.php"; foreach(getAllTags() as $t) if($t["name"]==="HVAC"){echo $t["id"];}')
+ROOF_ID=$(HANDYMANAGER_DB="$DB" php -r 'require "database.php"; foreach(getAllTags() as $t) if($t["name"]==="Roofing"){echo $t["id"];}')
+
+# Assign a tag to the Smith job (has 1 task, 2h) via Edit Details save
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=save-job' --data-urlencode "id=$JOB_ID" \
+    --data-urlencode 'name=Smith - 412 Oak Ave' --data-urlencode "tags[]=$HVAC_ID")
+check "job detail shows assigned tag chip" 'tag-chip' "$OUT"
+check "job detail shows assigned tag name" 'HVAC' "$OUT"
+
+# Filter the Paid tab by the tag: the job shows AND its task aggregates are intact
+# (the EXISTS filter must not multiply rows and break COUNT/SUM).
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=paid' --data-urlencode "tag=$HVAC_ID")
+check "tag filter shows the tagged job"        'Smith - 412 Oak Ave' "$OUT"
+check "tag filter preserves task aggregates"   '1 task' "$OUT"
+
+# A different tag (Smith isn't Roofing) excludes it
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=paid' --data-urlencode "tag=$ROOF_ID")
+if [[ "$OUT" == *'Smith - 412 Oak Ave'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - tag filter excludes jobs without the tag"
+else
+    PASS=$((PASS+1)); echo "ok   - tag filter excludes jobs without the tag"
+fi
+
+# Forms expose the curated vocabulary as checkboxes (no free-text)
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=log-call-form')
+check "log-call form renders tag checkboxes" 'name="tags[]"' "$OUT"
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"action\":\"suggestions\"}")
+check "suggestions include the tag vocabulary" '"name":"HVAC"' "$OUT"
+
+# Log a call with a tag selected; the new job carries it
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Tagged\",\"location\":\"2 Tag St\",\"tags\":[\"$ROOF_ID\"]}")
+check "log-call with tag opens job" 'Tagged - 2 Tag St' "$OUT"
+TAGGED_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Tagged")!==false){echo $j["id"];break;}')
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-job' --data-urlencode "id=$TAGGED_ID")
+check "tag set at intake is on the job" 'Roofing' "$OUT"
+
+# Rename a tag (vocabulary-level)
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=rename-tag' --data-urlencode "tag_id=$ROOF_ID" --data-urlencode 'name=Roof Work')
+check "rename tag updates vocabulary" 'Roof Work' "$OUT"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-job' --data-urlencode "id=$TAGGED_ID")
+check "renamed tag reflected on job" 'Roof Work' "$OUT"
+
+# Delete a tag: it drops off every job (FK cascade)
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=delete-tag' --data-urlencode "tag_id=$ROOF_ID")
+check "delete tag from vocabulary" 'Tag deleted' "$OUT"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-job' --data-urlencode "id=$TAGGED_ID")
+if [[ "$OUT" == *'Roof Work'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - deleting a tag removes it from its jobs"
+else
+    PASS=$((PASS+1)); echo "ok   - deleting a tag removes it from its jobs"
+fi
+
 # --- Job and report exports ---
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-job-json' --data-urlencode "id=$JOB_ID")
 check "job JSON export has tasks" '"tasks"' "$OUT"
 check "job JSON export has summary" '"total_hours"' "$OUT"
+check "job JSON export includes tags" '"HVAC"' "$OUT"
 
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=job-text' --data-urlencode "id=$JOB_ID")
 check "job plain-text view renders textarea" '<textarea class="job-text"' "$OUT"

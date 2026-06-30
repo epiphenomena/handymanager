@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     switch ($action) {
         case 'view-jobs':
             renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '',
-                null, false, !empty($_POST['cards_only']));
+                $_POST['tag'] ?? '', null, false, !empty($_POST['cards_only']));
             break;
 
         case 'view-job':
@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // re-render whichever the request came from.
             if (($_POST['return'] ?? '') === 'list') {
                 renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '',
-                    $ok ? null : $message, !$ok);
+                    $_POST['tag'] ?? '', $ok ? null : $message, !$ok);
             } else {
                 renderJobDetail((int)$_POST['id'], $ok ? 'Status updated' : $message, !$ok);
             }
@@ -86,12 +86,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'phone' => $_POST['phone'] ?? '',
                 'call_notes' => $_POST['call_notes'] ?? '',
             ]);
+            // Only persist tags if the rest of the save validated, so a
+            // rejected save (blank name) doesn't silently change tags.
+            if ($ok) {
+                setJobTags((int)$_POST['id'], $_POST['tags'] ?? []);
+            }
             renderJobDetail((int)$_POST['id'], $ok ? 'Job updated' : 'Job name is required', !$ok);
             break;
 
         case 'delete-job':
             deleteJob((int)$_POST['id']);
-            renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '', 'Job deleted');
+            renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '',
+                $_POST['tag'] ?? '', 'Job deleted');
             break;
 
         case 'customer-search':
@@ -116,6 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // The customer name + location becomes the official job name
             $name = "$customer - $location";
             $jobId = createJob($name, $customer, $_POST['phone'] ?? '', $_POST['call_notes'] ?? '');
+            setJobTags($jobId, $_POST['tags'] ?? []);
             renderLogCallForm("Job opened: " . $name, false);
             break;
 
@@ -224,6 +231,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // empties the inline text slot
             break;
 
+        case 'manage-tags':
+            renderManageTags();
+            break;
+
+        case 'create-tag':
+            list($newId, $message) = createTag($_POST['name'] ?? '');
+            renderManageTags($message, $newId === false);
+            break;
+
+        case 'rename-tag':
+            list($ok, $message) = renameTag((int)$_POST['tag_id'], $_POST['name'] ?? '');
+            renderManageTags($message, !$ok);
+            break;
+
+        case 'delete-tag':
+            deleteTag((int)$_POST['tag_id']);
+            renderManageTags('Tag deleted');
+            break;
+
         default:
             http_response_code(400);
             echo '<div class="flash flash-error">Unknown action</div>';
@@ -271,26 +297,28 @@ function flash($message, $isError = false) {
 // Fragments
 // ---------------------------------------------------------------------------
 
-function renderJobsView($group, $statusFilter = '', $q = '', $message = null, $isError = false, $cardsOnly = false) {
+function renderJobsView($group, $statusFilter = '', $q = '', $tag = '', $message = null, $isError = false, $cardsOnly = false) {
     $group = isset(STATUS_GROUPS[$group]) ? $group : 'active';
     $groupStatuses = STATUS_GROUPS[$group];
     // A status filter narrows the group to a single status (must belong to it)
     $statuses = ($statusFilter !== '' && in_array($statusFilter, $groupStatuses, true))
         ? [$statusFilter] : $groupStatuses;
-    $jobs = getJobsByStatus($statuses, $q);
+    $jobs = getJobsByStatus($statuses, $q, $tag);
 
     // Live search re-renders only the cards (so the search box keeps focus)
     // and updates the header count out-of-band.
     if ($cardsOnly) {
-        renderJobCards($jobs, $group, $statusFilter, $q);
+        renderJobCards($jobs, $group, $statusFilter, $q, $tag);
         ?>
         <span id="job-count" class="muted" hx-swap-oob="true"><?= count($jobs) ?> job<?= count($jobs) === 1 ? '' : 's' ?></span>
         <?php
         return;
     }
 
-    // Carry the current search through pill clicks so it isn't lost
-    $pillVals = fn($st) => h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $st, 'q' => $q]));
+    // Carry the current search + tag filter through pill clicks so they aren't lost
+    $pillVals = fn($st) => h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $st, 'q' => $q, 'tag' => $tag]));
+    $tagPillVals = fn($t) => h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $statusFilter, 'q' => $q, 'tag' => $t]));
+    $allTags = getAllTags();
     ?>
     <?= flash($message, $isError) ?>
     <div class="jobs-sticky">
@@ -300,7 +328,7 @@ function renderJobsView($group, $statusFilter = '', $q = '', $message = null, $i
             <input type="search" class="job-search" name="q" value="<?= h($q) ?>" placeholder="Search job name…"
                 autocomplete="off" hx-post="admin.php" hx-target="#job-cards" hx-swap="outerHTML"
                 hx-trigger="keyup changed delay:200ms, search"
-                hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $statusFilter, 'cards_only' => 1])) ?>'>
+                hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $statusFilter, 'tag' => $tag, 'cards_only' => 1])) ?>'>
             <?php if (count($groupStatuses) > 1): ?>
             <div class="filter-pills">
                 <button class="pill <?= $statusFilter === '' ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
@@ -311,15 +339,25 @@ function renderJobsView($group, $statusFilter = '', $q = '', $message = null, $i
                 <?php endforeach; ?>
             </div>
             <?php endif; ?>
+            <?php if (!empty($allTags)): ?>
+            <div class="filter-pills filter-pills-tags">
+                <button class="pill <?= $tag === '' ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
+                    hx-vals='<?= $tagPillVals('') ?>'>All tags</button>
+                <?php foreach ($allTags as $tg): ?>
+                <button class="pill <?= (string)$tag === (string)$tg['id'] ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
+                    hx-vals='<?= $tagPillVals((int)$tg['id']) ?>'><?= h($tg['name']) ?></button>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 
-    <?php renderJobCards($jobs, $group, $statusFilter, $q); ?>
+    <?php renderJobCards($jobs, $group, $statusFilter, $q, $tag); ?>
     <?php
 }
 
 // The job cards list (its own container so live search can swap just this part)
-function renderJobCards($jobs, $group, $statusFilter, $q) {
+function renderJobCards($jobs, $group, $statusFilter, $q, $tag = '') {
     ?>
     <div class="job-cards" id="job-cards">
         <?php if (empty($jobs)): ?>
@@ -343,11 +381,18 @@ function renderJobCards($jobs, $group, $statusFilter, $q) {
                 <?php if ($job['paid_at']): ?><span>Paid <?= h(fmtDate($job['paid_at'])) ?></span><?php endif; ?>
                 <?php if ($job['closed_at']): ?><span>Closed <?= h(fmtDate($job['closed_at'])) ?></span><?php endif; ?>
             </div>
+            <?php if (!empty($job['tags'])): ?>
+            <div class="tag-chips">
+                <?php foreach (explode(', ', $job['tags']) as $tagName): ?>
+                <span class="tag-chip"><?= h($tagName) ?></span>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
             <?php if ($job['admin_notes']): ?>
             <div class="job-card-notes"><?= h(mb_strimwidth($job['admin_notes'], 0, 220, '…')) ?></div>
             <?php endif; ?>
             <div class="job-card-actions">
-                <?php renderStatusButtons($job, ['return' => 'list', 'group' => $group, 'status_filter' => $statusFilter, 'q' => $q], 'btn-xs'); ?>
+                <?php renderStatusButtons($job, ['return' => 'list', 'group' => $group, 'status_filter' => $statusFilter, 'q' => $q, 'tag' => $tag], 'btn-xs'); ?>
             </div>
         </div>
         <?php endforeach; ?>
@@ -465,6 +510,11 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
                 <?php if ($job['customer_name']): ?><span><?= h($job['customer_name']) ?></span><?php endif; ?>
                 <?php if ($job['phone']): ?><span><a href="tel:<?= h($job['phone']) ?>"><?= h($job['phone']) ?></a></span><?php endif; ?>
             </div>
+            <?php $jobTags = getTagsForJob($jobId); if (!empty($jobTags)): ?>
+            <div class="tag-chips">
+                <?php foreach ($jobTags as $tg): ?><span class="tag-chip"><?= h($tg['name']) ?></span><?php endforeach; ?>
+            </div>
+            <?php endif; ?>
         </div>
         <div class="job-detail-actions">
             <?php renderStatusButtons($job, ['return' => 'detail']); ?>
@@ -553,6 +603,32 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
     <?php
 }
 
+// A checkbox per tag in the curated vocabulary (no free-text - tags are
+// managed on the Tags screen). $selectedIds are pre-checked. Submits as
+// tags[] = tag id. Shared by the job edit form and the Log Call form.
+function renderTagCheckboxes(array $selectedIds = []) {
+    $tags = getAllTags();
+    $selected = array_map('intval', $selectedIds);
+    ?>
+    <fieldset class="tag-picker">
+        <legend>Tags</legend>
+        <?php if (empty($tags)): ?>
+        <p class="muted hint">No tags yet — add them under <strong>Tags</strong> in the menu.</p>
+        <?php else: ?>
+        <div class="tag-picker-options">
+            <?php foreach ($tags as $tg): ?>
+            <label class="tag-check">
+                <input type="checkbox" name="tags[]" value="<?= (int)$tg['id'] ?>"
+                    <?= in_array((int)$tg['id'], $selected, true) ? 'checked' : '' ?>>
+                <span><?= h($tg['name']) ?></span>
+            </label>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+    </fieldset>
+    <?php
+}
+
 function renderJobEditForm($jobId) {
     $job = getJobById($jobId);
     if (!$job) {
@@ -576,6 +652,7 @@ function renderJobEditForm($jobId) {
         <label>Call Notes
             <textarea name="call_notes" rows="4"><?= h($job['call_notes']) ?></textarea>
         </label>
+        <?php renderTagCheckboxes(array_column(getTagsForJob($jobId), 'id')); ?>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">Save</button>
             <button type="button" class="btn btn-ghost" hx-post="admin.php" hx-target="#content"
@@ -777,6 +854,7 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
                 value="<?= $val('location') ?>" autocomplete="off" required placeholder="e.g. 123 Main St">
         </label>
         <p class="muted hint">Customer name + location becomes the official job name techs will see.</p>
+        <?php renderTagCheckboxes($isError ? ($old['tags'] ?? []) : []); ?>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">Open Job</button>
         </div>
@@ -822,6 +900,53 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
         });
     })();
     </script>
+    <?php
+}
+
+// The curated tag vocabulary: add, rename, delete. This is the only place
+// tags are created; job forms only check existing tags. Deleting a tag
+// removes it from every job (FK cascade), hence the confirm.
+function renderManageTags($message = null, $isError = false) {
+    $tags = getAllTags();
+    // The whole fragment is rooted at #manage-tags: the create/rename/delete
+    // controls swap this element with outerHTML, so the response must be a
+    // single node (header/intro included) or they'd duplicate on each action.
+    ?>
+    <div id="manage-tags">
+        <div class="view-header"><h2>Manage Tags</h2></div>
+        <?= flash($message, $isError) ?>
+        <p class="muted">Tags label a job with the skill/license it needs (e.g. Plumbing).
+            Jobs are tagged from their Edit Details form or when logging a call; new tags are added here.</p>
+        <div class="panel form-stack">
+        <form class="inline-form" hx-post="admin.php" hx-target="#manage-tags" hx-swap="outerHTML">
+            <input type="hidden" name="action" value="create-tag">
+            <input type="text" name="name" placeholder="New tag name…" autocomplete="off" required
+                style="flex:1;min-width:0">
+            <button type="submit" class="btn btn-primary btn-sm">Add Tag</button>
+        </form>
+        <?php if (empty($tags)): ?>
+        <p class="empty-state">No tags yet.</p>
+        <?php else: ?>
+        <ul class="tag-admin-list">
+            <?php foreach ($tags as $tag): ?>
+            <li class="tag-admin-row">
+                <form class="inline-form" hx-post="admin.php" hx-target="#manage-tags" hx-swap="outerHTML">
+                    <input type="hidden" name="action" value="rename-tag">
+                    <input type="hidden" name="tag_id" value="<?= (int)$tag['id'] ?>">
+                    <input type="text" name="name" value="<?= h($tag['name']) ?>" autocomplete="off" required
+                        style="flex:1;min-width:0">
+                    <button type="submit" class="btn btn-ghost btn-sm">Rename</button>
+                </form>
+                <button type="button" class="btn btn-danger btn-sm" hx-post="admin.php"
+                    hx-target="#manage-tags" hx-swap="outerHTML"
+                    hx-confirm="Delete the tag &ldquo;<?= h($tag['name']) ?>&rdquo;? It will be removed from every job."
+                    hx-vals='<?= h(json_encode(['action' => 'delete-tag', 'tag_id' => (int)$tag['id']])) ?>'>Delete</button>
+            </li>
+            <?php endforeach; ?>
+        </ul>
+        <?php endif; ?>
+        </div>
+    </div>
     <?php
 }
 
@@ -1085,6 +1210,7 @@ function jobExportData($jobId) {
     foreach ($tasks as $task) {
         $totalHours += (float)($task['hours'] ?? 0);
     }
+    $tags = array_column(getTagsForJob($jobId), 'name');
     return [
         'job' => [
             'id' => (int)$job['id'],
@@ -1093,6 +1219,7 @@ function jobExportData($jobId) {
             'status_label' => STATUS_LABELS[$job['status']] ?? $job['status'],
             'customer_name' => $job['customer_name'],
             'phone' => $job['phone'],
+            'tags' => $tags,
             'call_notes' => $job['call_notes'],
             'admin_notes' => $job['admin_notes'],
             'opened_at' => $job['opened_at'],
@@ -1139,6 +1266,7 @@ function jobPlainText($data) {
     $t .= "Status: {$job['status_label']}\n";
     if ($job['customer_name']) $t .= "Customer: {$job['customer_name']}\n";
     if ($job['phone']) $t .= "Phone: {$job['phone']}\n";
+    if (!empty($job['tags'])) $t .= "Tags: " . implode(', ', $job['tags']) . "\n";
     $t .= "Opened: " . fmtDt($job['opened_at']) . "\n";
     if ($job['ready_for_billing_at']) $t .= "Ready for billing: " . fmtDate($job['ready_for_billing_at']) . "\n";
     if ($job['billed_at']) $t .= "Billed: " . fmtDate($job['billed_at']) . "\n";
@@ -1494,6 +1622,50 @@ function exportTechCsv($tech, $month) {
         .pill:hover { border-color: var(--primary); color: var(--primary); }
         .pill.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 
+        /* Second pill row: tag filter, set apart from the status pills */
+        .jobs-sticky .filter-pills-tags { padding-top: 6px; }
+
+        /* Tag chips on job cards / detail */
+        .tag-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .tag-chip {
+            font-size: 12px;
+            font-weight: 600;
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 2px 10px;
+        }
+
+        /* Tag picker (job edit + log call forms): toggle pills backed by
+           checkboxes - the checkbox is visually hidden but still submits. */
+        .tag-picker { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 0; }
+        .tag-picker legend { font-weight: 600; font-size: 14px; padding: 0 4px; }
+        .tag-picker-options { display: flex; flex-wrap: wrap; gap: 8px; }
+        .tag-check {
+            display: inline-flex;
+            align-items: center;
+            font-size: 13px;
+            font-weight: 500;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            border-radius: 999px;
+            padding: 5px 14px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .tag-check input { position: absolute; opacity: 0; width: 0; height: 0; }
+        .tag-check:hover { border-color: var(--primary); color: var(--primary); }
+        .tag-check:has(input:checked) { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .tag-check:has(input:focus-visible) { outline: 2px solid rgba(37,99,235,.35); outline-offset: 1px; }
+
+        /* Manage Tags screen */
+        .tag-admin-list { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+        .tag-admin-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .tag-admin-row .inline-form { display: flex; flex: 1; min-width: 0; gap: 8px; align-items: center; }
+        #manage-tags > .inline-form { display: flex; gap: 8px; align-items: center; }
+
         /* Status buttons on job cards */
         .job-card-actions {
             display: flex;
@@ -1730,6 +1902,8 @@ function exportTechCsv($tech, $month) {
                 hx-vals='{"action":"log-call-form"}'>Log Call</button>
             <button data-nav="reports" hx-post="admin.php" hx-target="#content"
                 hx-vals='{"action":"view-reports"}'>Reports</button>
+            <button data-nav="tags" hx-post="admin.php" hx-target="#content"
+                hx-vals='{"action":"manage-tags"}'>Tags</button>
         </nav>
         <span class="spacer"></span>
         <button id="menu-toggle" class="btn btn-ghost btn-sm" aria-label="Menu">⋮</button>

@@ -131,11 +131,19 @@ those stay in progress for admin review). To add a schema change, append
 a numbered migration in `initDatabase()`.
 
 ```
-jobs:  id, name, customer_name, phone, call_notes, admin_notes,
-       status, is_system, opened_at, ready_for_billing_at, billed_at, paid_at
-tasks: id, job_id, created_at, tech_name, start_time, end_time, notes,
-       closed_at, client_uuid
+jobs:     id, name, customer_name, phone, call_notes, admin_notes,
+          status, is_system, opened_at, ready_for_billing_at, billed_at,
+          paid_at, closed_at
+tasks:    id, job_id, created_at, tech_name, start_time, end_time, notes,
+          closed_at, client_uuid
+tags:     id, name (case-insensitively unique)
+job_tags: job_id, tag_id  (many-to-many, FK cascade on both sides)
 ```
+
+Tags are a curated vocabulary (skills/licenses like Plumbing, seeded by
+migration 5) managed from the admin **Tags** screen; jobs are tagged via
+checkboxes on the Edit Details and Log Call forms, and the job-list tabs can
+be filtered to a single tag.
 
 A separate `~/py/handy/export.py` (not in this repo) emails a daily
 per-tech job report by reading the production db over SSH. It reads

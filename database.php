@@ -47,6 +47,7 @@ function initDatabase() {
         2 => 'migration2_task_client_uuid',
         3 => 'migration3_merge_legacy_clock_job',
         4 => 'migration4_job_closed_status',
+        5 => 'migration5_job_tags',
     ];
 
     foreach ($migrations as $target => $fn) {
@@ -223,6 +224,29 @@ function migration4_job_closed_status($pdo) {
     $pdo->exec("ALTER TABLE jobs ADD COLUMN closed_at TEXT");
 }
 
+// Migration 5: a curated tag vocabulary (tags) and a many-to-many link to
+// jobs (job_tags). Tag names are case-insensitively unique so "HVAC" and
+// "hvac" can't both exist. Seeded with the common skill/license tags.
+function migration5_job_tags($pdo) {
+    $pdo->exec("
+        CREATE TABLE tags (
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL COLLATE NOCASE UNIQUE
+        )
+    ");
+    $pdo->exec("
+        CREATE TABLE job_tags (
+            job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+            tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            PRIMARY KEY (job_id, tag_id)
+        )
+    ");
+    $seed = $pdo->prepare("INSERT INTO tags (name) VALUES (:name)");
+    foreach (['Plumbing', 'Electrical', 'HVAC'] as $name) {
+        $seed->execute(['name' => $name]);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Jobs
 // ---------------------------------------------------------------------------
@@ -253,8 +277,12 @@ function getJobById($jobId) {
 
 // Jobs (non-system) in the given statuses, with task aggregates.
 // $search does a partial, token-based match on the job name: each
-// whitespace-separated token must appear (any order).
-function getJobsByStatus(array $statuses, $search = '') {
+// whitespace-separated token must appear (any order). $tagId, when set,
+// restricts to jobs carrying that tag.
+//
+// Tags are joined via correlated subqueries, NOT a LEFT JOIN: a many-to-many
+// join would multiply rows and break the task COUNT/SUM aggregates.
+function getJobsByStatus(array $statuses, $search = '', $tagId = null) {
     $pdo = getDbConnection();
     $placeholders = implode(',', array_fill(0, count($statuses), '?'));
     $where = ['j.is_system = 0', "j.status IN ($placeholders)"];
@@ -263,12 +291,19 @@ function getJobsByStatus(array $statuses, $search = '') {
         $where[] = 'LOWER(j.name) LIKE ?';
         $params[] = '%' . mb_strtolower($token) . '%';
     }
+    if ($tagId !== null && $tagId !== '') {
+        $where[] = 'EXISTS (SELECT 1 FROM job_tags jt WHERE jt.job_id = j.id AND jt.tag_id = ?)';
+        $params[] = (int)$tagId;
+    }
     $stmt = $pdo->prepare("
         SELECT j.*,
                COUNT(t.id) AS task_count,
                SUM(CASE WHEN t.id IS NOT NULL AND t.end_time IS NULL THEN 1 ELSE 0 END) AS open_task_count,
                SUM((julianday(t.end_time) - julianday(t.start_time)) * 24.0) AS total_hours,
-               MAX(COALESCE(t.end_time, t.start_time)) AS last_activity
+               MAX(COALESCE(t.end_time, t.start_time)) AS last_activity,
+               (SELECT GROUP_CONCAT(tg.name, ', ')
+                FROM job_tags jt JOIN tags tg ON tg.id = jt.tag_id
+                WHERE jt.job_id = j.id) AS tags
         FROM jobs j
         LEFT JOIN tasks t ON t.job_id = j.id
         WHERE " . implode(' AND ', $where) . "
@@ -277,6 +312,88 @@ function getJobsByStatus(array $statuses, $search = '') {
     ");
     $stmt->execute($params);
     return $stmt->fetchAll();
+}
+
+// ---------------------------------------------------------------------------
+// Tags (a curated, admin-managed vocabulary; many-to-many with jobs)
+// ---------------------------------------------------------------------------
+
+// The whole tag vocabulary, alphabetical
+function getAllTags() {
+    $pdo = getDbConnection();
+    return $pdo->query("SELECT id, name FROM tags ORDER BY name COLLATE NOCASE")->fetchAll();
+}
+
+// Tags attached to one job (rows: id, name), alphabetical
+function getTagsForJob($jobId) {
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("
+        SELECT tg.id, tg.name
+        FROM job_tags jt JOIN tags tg ON tg.id = jt.tag_id
+        WHERE jt.job_id = :id
+        ORDER BY tg.name COLLATE NOCASE
+    ");
+    $stmt->execute(['id' => $jobId]);
+    return $stmt->fetchAll();
+}
+
+// Replace a job's tags with the given tag ids. Does NOT create tags - the
+// vocabulary is managed only through createTag/renameTag/deleteTag - so any
+// id that isn't a real tag is silently ignored.
+function setJobTags($jobId, array $tagIds) {
+    $pdo = getDbConnection();
+    $pdo->prepare("DELETE FROM job_tags WHERE job_id = :id")->execute(['id' => $jobId]);
+    if (empty($tagIds)) {
+        return;
+    }
+    // Keep only ids that exist, de-duplicated
+    $ids = array_values(array_unique(array_map('intval', $tagIds)));
+    $insert = $pdo->prepare("
+        INSERT OR IGNORE INTO job_tags (job_id, tag_id)
+        SELECT :job_id, :tag_id WHERE EXISTS (SELECT 1 FROM tags WHERE id = :tag_id)
+    ");
+    foreach ($ids as $tagId) {
+        $insert->execute(['job_id' => $jobId, 'tag_id' => $tagId]);
+    }
+}
+
+// Create a tag. Returns [id, message]; id is false if the name is empty or a
+// case-insensitive duplicate of an existing tag.
+function createTag($name) {
+    $name = trim($name);
+    if ($name === '') {
+        return [false, 'Tag name is required'];
+    }
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("INSERT OR IGNORE INTO tags (name) VALUES (:name)");
+    $stmt->execute(['name' => $name]);
+    if ($stmt->rowCount() === 0) {
+        return [false, 'That tag already exists'];
+    }
+    return [(int)$pdo->lastInsertId(), 'Tag added'];
+}
+
+// Rename a tag. Returns [bool ok, string message].
+function renameTag($id, $name) {
+    $name = trim($name);
+    if ($name === '') {
+        return [false, 'Tag name is required'];
+    }
+    $pdo = getDbConnection();
+    try {
+        $stmt = $pdo->prepare("UPDATE tags SET name = :name WHERE id = :id");
+        $stmt->execute(['name' => $name, 'id' => $id]);
+    } catch (PDOException $e) {
+        // NOCASE UNIQUE violation -> a tag by that name already exists
+        return [false, 'That tag already exists'];
+    }
+    return [true, 'Tag renamed'];
+}
+
+// Delete a tag. Its job associations are removed by the FK cascade.
+function deleteTag($id) {
+    $pdo = getDbConnection();
+    return $pdo->prepare("DELETE FROM tags WHERE id = :id")->execute(['id' => $id]);
 }
 
 // Jobs a tech may log tasks against: open/in-progress jobs plus the system job

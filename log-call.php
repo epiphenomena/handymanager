@@ -10,9 +10,9 @@ require_once __DIR__ . '/config.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $input = getValidatedInput([], true);
 
-    // Known customers/locations for the autocomplete datalists
+    // Known customers/locations + the tag vocabulary for the form
     if (($input['action'] ?? '') === 'suggestions') {
-        sendJsonResponse(['success' => true] + getCallSuggestions());
+        sendJsonResponse(['success' => true, 'tags' => getAllTags()] + getCallSuggestions());
     }
 
     $customer = trim($input['customer_name'] ?? '');
@@ -23,7 +23,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // The customer name + location becomes the official job name
     $name = "$customer - $location";
-    createJob($name, $customer, $input['phone'] ?? '', $input['call_notes'] ?? '');
+    $jobId = createJob($name, $customer, $input['phone'] ?? '', $input['call_notes'] ?? '');
+    setJobTags($jobId, $input['tags'] ?? []);
 
     sendJsonResponse(['success' => true, 'job_name' => $name]);
 }
@@ -85,6 +86,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         textarea { resize: vertical; }
 
         .hint { color: #6b7280; font-size: 13px; font-weight: 400; margin: -8px 0 0; }
+
+        /* Tag picker: toggle pills backed by checkboxes (the checkbox is
+           visually hidden but still submits when checked) */
+        .tag-picker { border: 1px solid #e2e4e8; border-radius: 8px; padding: 12px 14px; margin: 0; }
+        .tag-picker legend { font-weight: 600; font-size: 14px; padding: 0 4px; }
+        .tag-options { display: flex; flex-wrap: wrap; gap: 8px; }
+        .tag-options label {
+            display: inline-flex; align-items: center;
+            font-size: 14px; font-weight: 500;
+            border: 1px solid #e2e4e8; background: #fff; color: #1c2024;
+            border-radius: 999px; padding: 7px 14px;
+            cursor: pointer; user-select: none;
+        }
+        .tag-options input { position: absolute; opacity: 0; width: 0; height: 0; }
+        .tag-options label:hover { border-color: #2563eb; color: #2563eb; }
+        .tag-options label:has(input:checked) { background: #2563eb; border-color: #2563eb; color: #fff; }
+        .tag-options label:has(input:focus-visible) { outline: 2px solid rgba(37,99,235,.35); outline-offset: 1px; }
 
         /* Custom autocomplete dropdown */
         .hm-ac-wrap { position: relative; }
@@ -165,6 +183,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="text" id="location" placeholder="e.g. 123 Main St" required autocomplete="off">
             </label>
             <p class="hint">Customer name + location becomes the job name the techs will see.</p>
+            <fieldset id="tag-picker" class="tag-picker" style="display:none">
+                <legend>Tags</legend>
+                <div id="tag-options" class="tag-options"></div>
+            </fieldset>
             <button type="submit">Open Job</button>
         </form>
 
@@ -232,8 +254,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     return c.name;
                 });
                 locationNames = data.locations || [];
+                renderTags(data.tags || []);
             })
             .catch(error => console.error('Error loading suggestions:', error));
+        }
+
+        // Render the curated tag vocabulary as checkboxes (no free-text - tags
+        // are managed in the admin dashboard).
+        const tagPicker = document.getElementById('tag-picker');
+        const tagOptions = document.getElementById('tag-options');
+        function renderTags(tags) {
+            tagOptions.textContent = '';
+            if (!tags.length) { tagPicker.style.display = 'none'; return; }
+            tags.forEach(function(tag) {
+                const label = document.createElement('label');
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.name = 'tags';
+                input.value = tag.id;
+                const span = document.createElement('span');
+                span.textContent = tag.name;
+                label.appendChild(input);
+                label.appendChild(span);
+                tagOptions.appendChild(label);
+            });
+            tagPicker.style.display = '';
         }
 
         function maybePrefill(input, value) {
@@ -284,7 +329,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     customer_name: document.getElementById('customer-name').value.trim(),
                     location: document.getElementById('location').value.trim(),
                     phone: document.getElementById('phone').value.trim(),
-                    call_notes: document.getElementById('call-notes').value
+                    call_notes: document.getElementById('call-notes').value,
+                    tags: Array.from(tagOptions.querySelectorAll('input:checked')).map(cb => cb.value)
                 })
             })
             .then(response => response.json())
