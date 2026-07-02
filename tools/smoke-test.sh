@@ -84,6 +84,16 @@ check "job detail shows task" 'Fixed faucet' "$OUT"
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=save-notes' --data-urlencode "id=$JOB_ID" --data-urlencode 'admin_notes=Waiting on parts')
 check "admin notes saved" 'Waiting on parts' "$OUT"
 
+# Edit Details: the call (opened) date/time is editable, and required
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=job-edit-form' --data-urlencode "id=$JOB_ID")
+check "edit form exposes call date/time" 'name="opened_date"' "$OUT"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=save-job' --data-urlencode "id=$JOB_ID" \
+    --data-urlencode 'name=Smith - 412 Oak Ave' --data-urlencode 'opened_date=2026-01-15' --data-urlencode 'opened_time=09:30')
+check "call date/time saved" 'Opened Jan 15, 2026' "$OUT"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=save-job' --data-urlencode "id=$JOB_ID" \
+    --data-urlencode 'name=Smith - 412 Oak Ave' --data-urlencode 'opened_date=' --data-urlencode 'opened_time=')
+check "blank call date/time rejected" 'valid call date' "$OUT"
+
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$JOB_ID" --data-urlencode 'status=ready_for_billing')
 check "job marked ready for billing" 'Ready for Billing' "$OUT"
 
@@ -396,7 +406,9 @@ check "month detail CSV export" 'Job,Customer,Phone,Status' "$OUT"
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-reports')
 check "monthly report has data" '<td>1</td>' "$OUT"
 
-MONTH=$(date +%Y-%m)
+# Tim's tasks are logged in June 2026 (hardcoded above), so filter that month
+# rather than the wall-clock month (which drifts past the test data).
+MONTH=2026-06
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=report-tech' --data-urlencode 'tech=Tim' --data-urlencode "month=$MONTH")
 check "tech report shows task" 'Smith - 412 Oak Ave' "$OUT"
 

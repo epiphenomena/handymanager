@@ -417,7 +417,7 @@ function jobAcceptsTasks($job) {
 
 // Update editable job fields (admin)
 function updateJobFields($jobId, array $fields) {
-    $allowed = ['name', 'customer_name', 'phone', 'call_notes', 'admin_notes'];
+    $allowed = ['name', 'customer_name', 'phone', 'call_notes', 'admin_notes', 'opened_at'];
     $setClauses = [];
     $params = ['id' => $jobId];
     foreach ($allowed as $field) {
@@ -429,8 +429,11 @@ function updateJobFields($jobId, array $fields) {
     if (empty($setClauses)) {
         return false;
     }
-    // Job name is required
+    // Job name and opened_at are required (NOT NULL) - reject blanks
     if (array_key_exists('name', $params) && $params['name'] === null) {
+        return false;
+    }
+    if (array_key_exists('opened_at', $params) && $params['opened_at'] === null) {
         return false;
     }
     $pdo = getDbConnection();

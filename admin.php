@@ -80,12 +80,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
 
         case 'save-job':
-            $ok = updateJobFields((int)$_POST['id'], [
+            $jobFields = [
                 'name' => $_POST['name'] ?? '',
                 'customer_name' => $_POST['customer_name'] ?? '',
                 'phone' => $_POST['phone'] ?? '',
                 'call_notes' => $_POST['call_notes'] ?? '',
-            ]);
+            ];
+            // The edit form supplies the call (opened) date/time; only touch
+            // opened_at when they're actually submitted, and reject a blank.
+            if (isset($_POST['opened_date']) || isset($_POST['opened_time'])) {
+                $opened = validateDateTime(trim(($_POST['opened_date'] ?? '') . ' ' . ($_POST['opened_time'] ?? '')));
+                if ($opened === false) {
+                    renderJobDetail((int)$_POST['id'], 'A valid call date and time are required', true);
+                    break;
+                }
+                $jobFields['opened_at'] = $opened;
+            }
+            $ok = updateJobFields((int)$_POST['id'], $jobFields);
             // Only persist tags if the rest of the save validated, so a
             // rejected save (blank name) doesn't silently change tags.
             if ($ok) {
@@ -652,6 +663,15 @@ function renderJobEditForm($jobId) {
         <label>Call Notes
             <textarea name="call_notes" rows="4"><?= h($job['call_notes']) ?></textarea>
         </label>
+        <?php $openedTs = strtotime($job['opened_at']); ?>
+        <div class="form-row">
+            <label>Call Date
+                <input type="date" name="opened_date" value="<?= $openedTs ? date('Y-m-d', $openedTs) : '' ?>" required>
+            </label>
+            <label>Call Time
+                <input type="time" name="opened_time" value="<?= $openedTs ? date('H:i', $openedTs) : '' ?>" required>
+            </label>
+        </div>
         <?php renderTagCheckboxes(array_column(getTagsForJob($jobId), 'id')); ?>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">Save</button>
