@@ -148,6 +148,28 @@ OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=log-call-for
 check "admin log-call form attaches autocomplete" 'HMAutocomplete.attach' "$OUT"
 check "admin log-call form embeds customers" '"name":"Patel"' "$OUT"
 check "admin log-call form embeds locations" '7 Birch Ct' "$OUT"
+check "admin log-call form exposes call date/time" 'name="opened_date"' "$OUT"
+
+# Call date/time is settable at intake (for a call logged after the fact)
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=log-call' \
+    --data-urlencode 'customer_name=Backdate' --data-urlencode 'location=3 Old Rd' \
+    --data-urlencode 'opened_date=2026-03-04' --data-urlencode 'opened_time=14:20')
+check "admin backdated call opens job" 'Job opened: Backdate - 3 Old Rd' "$OUT"
+BD_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Backdate")!==false){echo $j["id"];break;}')
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-job' --data-urlencode "id=$BD_ID")
+check "admin backdated call stored the given date" 'Opened Mar 4, 2026' "$OUT"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=log-call' \
+    --data-urlencode 'customer_name=Bad' --data-urlencode 'location=9 X' \
+    --data-urlencode 'opened_date=nope' --data-urlencode 'opened_time=zz')
+check "admin log-call rejects a bad date" 'valid call date' "$OUT"
+
+# Standalone page accepts a backdated call too
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"StdBack\",\"location\":\"4 Fir\",\"opened_date\":\"2026-02-01\",\"opened_time\":\"08:15\"}")
+check "standalone backdated call opens job" 'StdBack - 4 Fir' "$OUT"
+SB_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"StdBack")!==false){echo $j["id"];break;}')
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-job' --data-urlencode "id=$SB_ID")
+check "standalone backdated call stored the given date" 'Opened Feb 1, 2026' "$OUT"
+check "standalone log-call rejects a bad date" 'valid call date' "$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"B2\",\"location\":\"5 Elm\",\"opened_date\":\"notadate\",\"opened_time\":\"99:99\"}")"
 
 # --- Admin can add a task directly (work reported outside the tech app) ---
 OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Lee\",\"location\":\"9 Pine Rd\"}")

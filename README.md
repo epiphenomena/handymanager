@@ -75,9 +75,10 @@ token (kept in localStorage) attached and verified on **every** request.
   inline (a "Copy as Text" button shows a read-only textarea with a Copy
   button — easy to paste into any app on mobile).
 - **Log Call** — opens a job: customer name, location (together they become
-  the official job name), phone, call notes. Customer/location autocomplete
-  from past jobs (freeform allowed); picking a known customer prefills
-  their last location and phone.
+  the official job name), phone, call notes, and the call date/time (defaults
+  to now, editable for a call logged after the fact). Customer/location
+  autocomplete from past jobs (freeform allowed); picking a known customer
+  prefills their last location and phone.
 - **Reports** — jobs completed per month (with status breakdown, hours and a
   per-month drill-down), tasks per tech per month, and a customer lookup
   with fuzzy search that lists all of a customer's jobs. All exportable as

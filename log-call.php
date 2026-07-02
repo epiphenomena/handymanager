@@ -21,9 +21,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         sendJsonResponse(['success' => false, 'message' => 'Customer name and location are required'], 400);
     }
 
+    // Call date/time: blank falls back to now; a given value is validated so a
+    // call logged after the fact can be recorded at its real time.
+    $openedInput = trim(($input['opened_date'] ?? '') . ' ' . ($input['opened_time'] ?? ''));
+    $openedAt = $openedInput === '' ? now() : validateDateTime($openedInput);
+    if ($openedAt === false) {
+        sendJsonResponse(['success' => false, 'message' => 'A valid call date and time are required'], 400);
+    }
+
     // The customer name + location becomes the official job name
     $name = "$customer - $location";
-    $jobId = createJob($name, $customer, $input['phone'] ?? '', $input['call_notes'] ?? '');
+    $jobId = createJob($name, $customer, $input['phone'] ?? '', $input['call_notes'] ?? '', $openedAt);
     setJobTags($jobId, $input['tags'] ?? []);
 
     sendJsonResponse(['success' => true, 'job_name' => $name]);
@@ -86,6 +94,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         textarea { resize: vertical; }
 
         .hint { color: #6b7280; font-size: 13px; font-weight: 400; margin: -8px 0 0; }
+
+        .dt-row { display: flex; gap: 12px; }
+        .dt-row label { flex: 1; }
 
         /* Tag picker: toggle pills backed by checkboxes (the checkbox is
            visually hidden but still submits when checked) */
@@ -182,7 +193,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label>Location / Address *
                 <input type="text" id="location" placeholder="e.g. 123 Main St" required autocomplete="off">
             </label>
-            <p class="hint">Customer name + location becomes the job name the techs will see.</p>
+            <div class="dt-row">
+                <label>Call Date
+                    <input type="date" id="opened-date" required>
+                </label>
+                <label>Call Time
+                    <input type="time" id="opened-time" required>
+                </label>
+            </div>
+            <p class="hint">Customer name + location becomes the job name the techs will see.
+                Call date/time defaults to now — change it for a call logged after the fact.</p>
             <fieldset id="tag-picker" class="tag-picker" style="display:none">
                 <legend>Tags</legend>
                 <div id="tag-options" class="tag-options"></div>
@@ -219,7 +239,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             callForm.style.display = '';
             changeTokenBtn.style.display = '';
             document.getElementById('customer-name').focus();
+            setNowDefaults();
             loadSuggestions();
+        }
+
+        // Pre-fill the call date/time with "now" (local). The office edits it
+        // only when logging a call after the fact.
+        const openedDateInput = document.getElementById('opened-date');
+        const openedTimeInput = document.getElementById('opened-time');
+        function setNowDefaults() {
+            const d = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            openedDateInput.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+            openedTimeInput.value = pad(d.getHours()) + ':' + pad(d.getMinutes());
         }
 
         // Known customers/locations for the autocomplete. Suggestions only -
@@ -330,6 +362,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     location: document.getElementById('location').value.trim(),
                     phone: document.getElementById('phone').value.trim(),
                     call_notes: document.getElementById('call-notes').value,
+                    opened_date: openedDateInput.value,
+                    opened_time: openedTimeInput.value,
                     tags: Array.from(tagOptions.querySelectorAll('input:checked')).map(cb => cb.value)
                 })
             })
@@ -338,6 +372,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (data.success) {
                     showBanner('Job opened: ' + data.job_name, false);
                     callForm.reset();
+                    setNowDefaults();
                     document.getElementById('customer-name').focus();
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                     loadSuggestions();

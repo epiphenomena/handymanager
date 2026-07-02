@@ -262,7 +262,9 @@ function migration5_job_tags($pdo) {
 // ---------------------------------------------------------------------------
 
 // Open a new job from a service call
-function createJob($name, $customerName, $phone, $callNotes) {
+// $openedAt lets the caller backdate a call logged after the fact
+// (a validated 'Y-m-d H:i:s' string); defaults to the current time.
+function createJob($name, $customerName, $phone, $callNotes, $openedAt = null) {
     $pdo = getDbConnection();
     $stmt = $pdo->prepare("
         INSERT INTO jobs (name, customer_name, phone, call_notes, status, opened_at)
@@ -273,7 +275,7 @@ function createJob($name, $customerName, $phone, $callNotes) {
         'customer_name' => trim($customerName ?? '') ?: null,
         'phone' => trim($phone ?? '') ?: null,
         'call_notes' => trim($callNotes ?? '') ?: null,
-        'opened_at' => now(),
+        'opened_at' => $openedAt ?: now(),
     ]);
     return (int)$pdo->lastInsertId();
 }

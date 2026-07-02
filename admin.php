@@ -122,9 +122,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 renderLogCallForm('Customer name and location are required', true, $_POST);
                 break;
             }
+            // Call date/time: blank falls back to now; a given value is validated.
+            $openedInput = trim(($_POST['opened_date'] ?? '') . ' ' . ($_POST['opened_time'] ?? ''));
+            $openedAt = $openedInput === '' ? now() : validateDateTime($openedInput);
+            if ($openedAt === false) {
+                renderLogCallForm('A valid call date and time are required', true, $_POST);
+                break;
+            }
             // The customer name + location becomes the official job name
             $name = "$customer - $location";
-            $jobId = createJob($name, $customer, $_POST['phone'] ?? '', $_POST['call_notes'] ?? '');
+            $jobId = createJob($name, $customer, $_POST['phone'] ?? '', $_POST['call_notes'] ?? '', $openedAt);
             setJobTags($jobId, $_POST['tags'] ?? []);
             renderLogCallForm("Job opened: " . $name, false);
             break;
@@ -865,7 +872,21 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
             <input type="text" id="lc-location" name="location"
                 value="<?= $val('location') ?>" autocomplete="off" required placeholder="e.g. 123 Main St">
         </label>
-        <p class="muted hint">Customer name + location becomes the official job name techs will see.</p>
+        <?php
+        // Default to now; a call logged after the fact can be backdated.
+        $openedDate = $isError ? ($old['opened_date'] ?? '') : date('Y-m-d');
+        $openedTime = $isError ? ($old['opened_time'] ?? '') : date('H:i');
+        ?>
+        <div class="form-row">
+            <label>Call Date
+                <input type="date" name="opened_date" value="<?= h($openedDate) ?>" required>
+            </label>
+            <label>Call Time
+                <input type="time" name="opened_time" value="<?= h($openedTime) ?>" required>
+            </label>
+        </div>
+        <p class="muted hint">Customer name + location becomes the official job name techs will see.
+            Call date/time defaults to now — change it if you're logging an earlier call.</p>
         <?php renderTagCheckboxes($isError ? ($old['tags'] ?? []) : []); ?>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">Open Job</button>
