@@ -344,6 +344,7 @@ function renderJobsView($group, $statusFilter = '', $q = '', $tag = '', $flag = 
                 autocomplete="off" hx-post="admin.php" hx-target="#job-cards" hx-swap="outerHTML"
                 hx-trigger="keyup changed delay:200ms, search"
                 hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $statusFilter, 'tag' => $tag, 'flag' => $flag, 'cards_only' => 1])) ?>'>
+            <div class="filter-groups">
             <?php if (count($groupStatuses) > 1): ?>
             <div class="filter-pills">
                 <button class="pill <?= $statusFilter === '' ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
@@ -374,6 +375,7 @@ function renderJobsView($group, $statusFilter = '', $q = '', $tag = '', $flag = 
                 <?php endforeach; ?>
             </div>
             <?php endif; ?>
+            </div>
         </div>
     </div>
 
@@ -1515,9 +1517,21 @@ function exportTechCsv($tech, $month) {
             flex-wrap: wrap;
         }
 
+        /* All the filter groups share one wrapping row (full width, under the
+           heading) so they don't each take a line; each group is bordered. */
+        .jobs-sticky .filter-groups {
+            flex-basis: 100%;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 4px;
+        }
         .jobs-sticky .filter-pills {
             margin: 0;
-            flex-basis: 100%;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 5px 7px;
+            background: var(--bg);
         }
 
         .job-search {
@@ -1643,8 +1657,6 @@ function exportTechCsv($tech, $month) {
         .pill.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 
         /* Second pill row: tag filter, set apart from the status pills */
-        .jobs-sticky .filter-pills-tags { padding-top: 6px; }
-        .jobs-sticky .filter-pills-flags { padding-top: 6px; }
 
         /* Tag chips on job cards / detail */
         .tag-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
