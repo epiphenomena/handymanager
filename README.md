@@ -99,12 +99,25 @@ minor typos, and rejects "incomplete"). "Completion time" is the task's end
 time (or start time if still open). Accepts `token` + `since` (aliases:
 `date`, `after`) via GET query string or a POST form/JSON body:
 
+Each job is the **full single-job export** (same shape as the admin "JSON ↓"
+export — `job` fields, every `task`, and a `summary`) plus a `completion`
+block naming the task that flagged it done:
+
 ```
 GET completed-jobs.php?token=ADMIN_TOKEN&since=2026-06-01
 -> {"success":true,"since":"2026-06-01 00:00:00","count":N,"jobs":[
-     {"id","name","customer_name","phone","status","tags",
-      "completed_at","completed_by","completion_note"}, ...]}
+     {
+       "job":     {id, name, status, status_label, customer_name, phone,
+                   tags, call_notes, admin_notes, opened_at,
+                   ready_for_billing_at, billed_at, paid_at, closed_at},
+       "tasks":   [{tech_name, start_time, end_time, hours, notes}, ...],
+       "summary": {task_count, total_hours},
+       "completion": {completed_at, completed_by, note}
+     }, ...]}
 ```
+
+`jobExportData()` (database.php) builds the job/tasks/summary shape and is
+shared with the admin export.
 
 ### Backend
 

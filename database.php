@@ -15,6 +15,16 @@ const JOB_STATUSES = ['open', 'in_progress', 'on_hold', 'ready_for_billing', 'bi
 // Statuses that accept new tasks (and appear in the tech autocomplete).
 // on_hold and closed are deliberately excluded: they hide the job from techs.
 const JOB_ACTIVE_STATUSES = ['open', 'in_progress'];
+// Human-readable status labels (used by the admin UI and JSON export).
+const STATUS_LABELS = [
+    'open' => 'Open',
+    'in_progress' => 'In Progress',
+    'on_hold' => 'On Hold',
+    'ready_for_billing' => 'Ready for Billing',
+    'billed' => 'Billed',
+    'paid' => 'Paid',
+    'closed' => 'Closed',
+];
 
 // Initialize database connection
 function getDbConnection() {
@@ -749,6 +759,55 @@ function getClockTaskMonths() {
 }
 
 // ---------------------------------------------------------------------------
+// Job export (full detail: job fields + every task + summary). Shared by the
+// admin JSON/text export and the completed-jobs endpoint.
+// ---------------------------------------------------------------------------
+
+function jobExportData($jobId) {
+    $job = getJobById($jobId);
+    if (!$job) {
+        return null;
+    }
+    $tasks = getTasksForJob($jobId);
+    $totalHours = 0;
+    foreach ($tasks as $task) {
+        $totalHours += (float)($task['hours'] ?? 0);
+    }
+    $tags = array_column(getTagsForJob($jobId), 'name');
+    return [
+        'job' => [
+            'id' => (int)$job['id'],
+            'name' => $job['name'],
+            'status' => $job['status'],
+            'status_label' => STATUS_LABELS[$job['status']] ?? $job['status'],
+            'customer_name' => $job['customer_name'],
+            'phone' => $job['phone'],
+            'tags' => $tags,
+            'call_notes' => $job['call_notes'],
+            'admin_notes' => $job['admin_notes'],
+            'opened_at' => $job['opened_at'],
+            'ready_for_billing_at' => $job['ready_for_billing_at'],
+            'billed_at' => $job['billed_at'],
+            'paid_at' => $job['paid_at'],
+            'closed_at' => $job['closed_at'],
+        ],
+        'tasks' => array_map(function ($task) {
+            return [
+                'tech_name' => $task['tech_name'],
+                'start_time' => $task['start_time'],
+                'end_time' => $task['end_time'],
+                'hours' => $task['hours'] !== null ? round((float)$task['hours'], 2) : null,
+                'notes' => $task['notes'],
+            ];
+        }, $tasks),
+        'summary' => [
+            'task_count' => count($tasks),
+            'total_hours' => round($totalHours, 2),
+        ],
+    ];
+}
+
+// ---------------------------------------------------------------------------
 // "Job complete" detection (techs flag a finished job in their task notes)
 // ---------------------------------------------------------------------------
 
@@ -806,14 +865,15 @@ function taskNoteSaysComplete($notes) {
 // Jobs a tech flagged complete in a task note, where that completion happened
 // after $since ('Y-m-d H:i:s'). "Completion time" is the task end time (or its
 // start time if still open). One record per job, using its latest matching
-// task, newest first.
+// task, newest first. Each record is the full jobExportData() shape (job
+// fields + every task + summary) plus a "completion" block describing which
+// task flagged it done.
 function getCompletedJobsSince($since) {
     $pdo = getDbConnection();
     $stmt = $pdo->prepare("
         SELECT t.tech_name, t.notes,
                COALESCE(t.end_time, t.start_time) AS completed_at,
-               j.id AS job_id, j.name AS job_name, j.status AS job_status,
-               j.customer_name, j.phone
+               j.id AS job_id
         FROM tasks t JOIN jobs j ON j.id = t.job_id
         WHERE j.is_system = 0
           AND t.notes IS NOT NULL AND TRIM(t.notes) <> ''
@@ -822,28 +882,27 @@ function getCompletedJobsSince($since) {
     ");
     $stmt->execute(['since' => $since]);
 
-    $byJob = [];
+    $seen = [];
+    $out = [];
     foreach ($stmt->fetchAll() as $r) {
         if (!taskNoteSaysComplete($r['notes'])) {
             continue;
         }
         $jid = (int)$r['job_id'];
-        if (isset($byJob[$jid])) {
+        if (isset($seen[$jid])) {
             continue; // rows are newest-first, so keep the latest per job
         }
-        $byJob[$jid] = [
-            'id' => $jid,
-            'name' => $r['job_name'],
-            'customer_name' => $r['customer_name'],
-            'phone' => $r['phone'],
-            'status' => $r['job_status'],
-            'tags' => array_column(getTagsForJob($jid), 'name'),
+        $seen[$jid] = true;
+        $data = jobExportData($jid);
+        // The task that flagged the job complete (the reason it's in this list)
+        $data['completion'] = [
             'completed_at' => $r['completed_at'],
             'completed_by' => $r['tech_name'],
-            'completion_note' => $r['notes'],
+            'note' => $r['notes'],
         ];
+        $out[] = $data;
     }
-    return array_values($byJob);
+    return $out;
 }
 
 // ---------------------------------------------------------------------------

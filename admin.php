@@ -7,15 +7,7 @@
 
 require_once __DIR__ . '/config.php';
 
-const STATUS_LABELS = [
-    'open' => 'Open',
-    'in_progress' => 'In Progress',
-    'on_hold' => 'On Hold',
-    'ready_for_billing' => 'Ready for Billing',
-    'billed' => 'Billed',
-    'paid' => 'Paid',
-    'closed' => 'Closed',
-];
+// STATUS_LABELS lives in database.php (shared with the JSON export endpoint).
 
 const STATUS_GROUPS = [
     'active' => ['open', 'in_progress', 'on_hold'],
@@ -1219,50 +1211,8 @@ function exportMonthCsv($month) {
     fclose($out);
 }
 
-// Full job export: structured data for feeding to an AI or other tools
-function jobExportData($jobId) {
-    $job = getJobById($jobId);
-    if (!$job) {
-        return null;
-    }
-    $tasks = getTasksForJob($jobId);
-    $totalHours = 0;
-    foreach ($tasks as $task) {
-        $totalHours += (float)($task['hours'] ?? 0);
-    }
-    $tags = array_column(getTagsForJob($jobId), 'name');
-    return [
-        'job' => [
-            'id' => (int)$job['id'],
-            'name' => $job['name'],
-            'status' => $job['status'],
-            'status_label' => STATUS_LABELS[$job['status']] ?? $job['status'],
-            'customer_name' => $job['customer_name'],
-            'phone' => $job['phone'],
-            'tags' => $tags,
-            'call_notes' => $job['call_notes'],
-            'admin_notes' => $job['admin_notes'],
-            'opened_at' => $job['opened_at'],
-            'ready_for_billing_at' => $job['ready_for_billing_at'],
-            'billed_at' => $job['billed_at'],
-            'paid_at' => $job['paid_at'],
-            'closed_at' => $job['closed_at'],
-        ],
-        'tasks' => array_map(function ($task) {
-            return [
-                'tech_name' => $task['tech_name'],
-                'start_time' => $task['start_time'],
-                'end_time' => $task['end_time'],
-                'hours' => $task['hours'] !== null ? round((float)$task['hours'], 2) : null,
-                'notes' => $task['notes'],
-            ];
-        }, $tasks),
-        'summary' => [
-            'task_count' => count($tasks),
-            'total_hours' => round($totalHours, 2),
-        ],
-    ];
-}
+// jobExportData() lives in database.php (shared with the completed-jobs
+// endpoint); exportJobJson/renderJobText below consume it.
 
 function exportJobJson($jobId) {
     $data = jobExportData($jobId);

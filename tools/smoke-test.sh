@@ -420,6 +420,11 @@ cj() { curl -s "$BASE/completed-jobs.php?$1"; }
 OUT=$(cj "token=$ADMIN&since=2026-06-01")
 check "completed-jobs fuzzy-matches a done note" 'Fin - 8 Fir' "$OUT"
 check "completed-jobs reports who completed it" '"completed_by":"Tim"' "$OUT"
+# Each job carries the full single-job export shape (job/tasks/summary) plus completion
+check "completed-jobs includes full task detail" '"tasks"' "$OUT"
+check "completed-jobs includes summary block"    '"summary"' "$OUT"
+check "completed-jobs includes job detail fields" '"status_label"' "$OUT"
+check "completed-jobs includes completion block" '"completion"' "$OUT"
 if [[ "$OUT" == *'Wip - 2 Ash'* ]]; then
     FAIL=$((FAIL+1)); echo "FAIL - completed-jobs excludes 'incomplete' notes"
 else
