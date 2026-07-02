@@ -76,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'name' => $_POST['name'] ?? '',
                 'customer_name' => $_POST['customer_name'] ?? '',
                 'phone' => $_POST['phone'] ?? '',
+                'email' => $_POST['email'] ?? '',
                 'call_notes' => $_POST['call_notes'] ?? '',
             ];
             // The edit form supplies the call (opened) date/time; only touch
@@ -131,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             // The customer name + location becomes the official job name
             $name = "$customer - $location";
-            $jobId = createJob($name, $customer, $_POST['phone'] ?? '', $_POST['call_notes'] ?? '', $openedAt);
+            $jobId = createJob($name, $customer, $_POST['phone'] ?? '', $_POST['email'] ?? '', $_POST['call_notes'] ?? '', $openedAt);
             setJobTags($jobId, $_POST['tags'] ?? []);
             renderLogCallForm("Job opened: " . $name, false);
             break;
@@ -542,6 +543,7 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
                 <?= statusBadge($job['status']) ?>
                 <?php if ($job['customer_name']): ?><span><?= h($job['customer_name']) ?></span><?php endif; ?>
                 <?php if ($job['phone']): ?><span><a href="tel:<?= h($job['phone']) ?>"><?= h($job['phone']) ?></a></span><?php endif; ?>
+                <?php if ($job['email']): ?><span><a href="mailto:<?= h($job['email']) ?>"><?= h($job['email']) ?></a></span><?php endif; ?>
             </div>
             <?php $jobTags = getTagsForJob($jobId); if (!empty($jobTags)): ?>
             <div class="tag-chips">
@@ -623,6 +625,7 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
             <div class="timeline-item-body">
                 <?php if ($job['customer_name']): ?><div><strong>Customer:</strong> <?= h($job['customer_name']) ?></div><?php endif; ?>
                 <?php if ($job['phone']): ?><div><strong>Phone:</strong> <?= h($job['phone']) ?></div><?php endif; ?>
+                <?php if ($job['email']): ?><div><strong>Email:</strong> <?= h($job['email']) ?></div><?php endif; ?>
                 <?php if ($job['call_notes']): ?><pre class="notes"><?= h($job['call_notes']) ?></pre><?php endif; ?>
             </div>
         </div>
@@ -681,6 +684,9 @@ function renderJobEditForm($jobId) {
         </label>
         <label>Phone
             <input type="tel" name="phone" value="<?= h($job['phone']) ?>">
+        </label>
+        <label>Email
+            <input type="email" name="email" value="<?= h($job['email']) ?>">
         </label>
         <label>Call Notes
             <textarea name="call_notes" rows="4"><?= h($job['call_notes']) ?></textarea>
@@ -888,6 +894,9 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
         <label>Phone Number
             <input type="tel" id="lc-phone" name="phone" value="<?= $val('phone') ?>" autocomplete="off">
         </label>
+        <label>Email
+            <input type="email" id="lc-email" name="email" value="<?= $val('email') ?>" autocomplete="off">
+        </label>
         <label>Call Notes
             <textarea name="call_notes" rows="5" placeholder="What does the customer need?"><?= $val('call_notes') ?></textarea>
         </label>
@@ -930,6 +939,7 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
         var customer = document.getElementById('lc-customer');
         var location = document.getElementById('lc-location');
         var phone = document.getElementById('lc-phone');
+        var email = document.getElementById('lc-email');
         if (!customer || !window.HMAutocomplete) return;
 
         HMAutocomplete.attach(customer, { getItems: function () { return customerNames; } });
@@ -947,9 +957,10 @@ function renderLogCallForm($message = null, $isError = false, $old = []) {
             if (known) {
                 maybePrefill(location, known.location);
                 maybePrefill(phone, known.phone);
+                maybePrefill(email, known.email);
             }
         });
-        [location, phone].forEach(function (input) {
+        [location, phone, email].forEach(function (input) {
             input.addEventListener('input', function (e) {
                 if (e.isTrusted) delete this.dataset.autofilled;
             });
@@ -1280,6 +1291,7 @@ function jobPlainText($data) {
     $t .= "Status: {$job['status_label']}\n";
     if ($job['customer_name']) $t .= "Customer: {$job['customer_name']}\n";
     if ($job['phone']) $t .= "Phone: {$job['phone']}\n";
+    if ($job['email']) $t .= "Email: {$job['email']}\n";
     if (!empty($job['tags'])) $t .= "Tags: " . implode(', ', $job['tags']) . "\n";
     $t .= "Opened: " . fmtDt($job['opened_at']) . "\n";
     if ($job['ready_for_billing_at']) $t .= "Ready for billing: " . fmtDate($job['ready_for_billing_at']) . "\n";

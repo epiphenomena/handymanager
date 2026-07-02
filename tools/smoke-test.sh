@@ -118,8 +118,9 @@ check "job marked paid" '>Paid<' "$OUT"
 OUT=$(post log-call.php '{"token":"wrong","customer_name":"Patel","location":"7 Birch Ct"}')
 check "log-call rejects bad token" 'Invalid admin token' "$OUT"
 
-OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Patel\",\"location\":\"7 Birch Ct\",\"phone\":\"555-0103\",\"call_notes\":\"Drywall repair\"}")
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Patel\",\"location\":\"7 Birch Ct\",\"phone\":\"555-0103\",\"email\":\"patel@example.com\",\"call_notes\":\"Drywall repair\"}")
 check "log-call opens job" 'Patel - 7 Birch Ct' "$OUT"
+check "log-call stores the optional email" 'patel@example.com' "$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-job' --data-urlencode "id=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Joe\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Patel")!==false){echo $j["id"];break;}')")"
 JOB2_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Joe\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Patel")!==false) { echo $j["id"]; break; }')
 
 # --- A running task blocks ready-for-billing; admin adding an end time unblocks ---
@@ -142,6 +143,7 @@ OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"action\":\"suggestions\"}")
 check "suggestions include customer" 'Patel' "$OUT"
 check "suggestions include location" '7 Birch Ct' "$OUT"
 check "suggestions carry phone for prefill" '555-0103' "$OUT"
+check "suggestions carry email for prefill" 'patel@example.com' "$OUT"
 
 # Admin Log Call form wires the custom autocomplete + embeds suggestion data
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=log-call-form')
@@ -149,6 +151,7 @@ check "admin log-call form attaches autocomplete" 'HMAutocomplete.attach' "$OUT"
 check "admin log-call form embeds customers" '"name":"Patel"' "$OUT"
 check "admin log-call form embeds locations" '7 Birch Ct' "$OUT"
 check "admin log-call form exposes call date/time" 'name="opened_date"' "$OUT"
+check "admin log-call form has an email field" 'id="lc-email"' "$OUT"
 
 # Call date/time is settable at intake (for a call logged after the fact)
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=log-call' \
@@ -407,6 +410,7 @@ OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-job-j
 check "job JSON export has tasks" '"tasks"' "$OUT"
 check "job JSON export has summary" '"total_hours"' "$OUT"
 check "job JSON export includes tags" '"HVAC"' "$OUT"
+check "job JSON export includes email field" '"email"' "$OUT"
 
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=job-text' --data-urlencode "id=$JOB_ID")
 check "job plain-text view renders textarea" '<textarea class="job-text"' "$OUT"

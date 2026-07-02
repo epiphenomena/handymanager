@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // The customer name + location becomes the official job name
     $name = "$customer - $location";
-    $jobId = createJob($name, $customer, $input['phone'] ?? '', $input['call_notes'] ?? '', $openedAt);
+    $jobId = createJob($name, $customer, $input['phone'] ?? '', $input['email'] ?? '', $input['call_notes'] ?? '', $openedAt);
     setJobTags($jobId, $input['tags'] ?? []);
 
     sendJsonResponse(['success' => true, 'job_name' => $name]);
@@ -187,6 +187,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label>Phone Number
                 <input type="tel" id="phone" autocomplete="off">
             </label>
+            <label>Email
+                <input type="email" id="email" autocomplete="off">
+            </label>
             <label>Call Notes
                 <textarea id="call-notes" rows="5" placeholder="What does the customer need?"></textarea>
             </label>
@@ -263,6 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         const customerInput = document.getElementById('customer-name');
         const locationInput = document.getElementById('location');
         const phoneInput = document.getElementById('phone');
+        const emailInput = document.getElementById('email');
 
         // Custom dropdowns (native datalist is unreliable across browsers)
         HMAutocomplete.attach(customerInput, { getItems: () => customerNames });
@@ -326,11 +330,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (known) {
                 maybePrefill(locationInput, known.location);
                 maybePrefill(phoneInput, known.phone);
+                maybePrefill(emailInput, known.email);
             }
         });
 
         // Hand-typed edits stop future autofill overwrites
-        [locationInput, phoneInput].forEach(input => {
+        [locationInput, phoneInput, emailInput].forEach(input => {
             input.addEventListener('input', function(e) {
                 if (e.isTrusted) delete this.dataset.autofilled;
             });
@@ -361,6 +366,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     customer_name: document.getElementById('customer-name').value.trim(),
                     location: document.getElementById('location').value.trim(),
                     phone: document.getElementById('phone').value.trim(),
+                    email: document.getElementById('email').value.trim(),
                     call_notes: document.getElementById('call-notes').value,
                     opened_date: openedDateInput.value,
                     opened_time: openedTimeInput.value,

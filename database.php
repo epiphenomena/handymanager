@@ -58,6 +58,7 @@ function initDatabase() {
         3 => 'migration3_merge_legacy_clock_job',
         4 => 'migration4_job_closed_status',
         5 => 'migration5_job_tags',
+        6 => 'migration6_job_email',
     ];
 
     foreach ($migrations as $target => $fn) {
@@ -257,6 +258,11 @@ function migration5_job_tags($pdo) {
     }
 }
 
+// Migration 6: an optional customer email captured when logging a call.
+function migration6_job_email($pdo) {
+    $pdo->exec("ALTER TABLE jobs ADD COLUMN email TEXT");
+}
+
 // ---------------------------------------------------------------------------
 // Jobs
 // ---------------------------------------------------------------------------
@@ -264,16 +270,17 @@ function migration5_job_tags($pdo) {
 // Open a new job from a service call
 // $openedAt lets the caller backdate a call logged after the fact
 // (a validated 'Y-m-d H:i:s' string); defaults to the current time.
-function createJob($name, $customerName, $phone, $callNotes, $openedAt = null) {
+function createJob($name, $customerName, $phone, $email, $callNotes, $openedAt = null) {
     $pdo = getDbConnection();
     $stmt = $pdo->prepare("
-        INSERT INTO jobs (name, customer_name, phone, call_notes, status, opened_at)
-        VALUES (:name, :customer_name, :phone, :call_notes, 'open', :opened_at)
+        INSERT INTO jobs (name, customer_name, phone, email, call_notes, status, opened_at)
+        VALUES (:name, :customer_name, :phone, :email, :call_notes, 'open', :opened_at)
     ");
     $stmt->execute([
         'name' => trim($name),
         'customer_name' => trim($customerName ?? '') ?: null,
         'phone' => trim($phone ?? '') ?: null,
+        'email' => trim($email ?? '') ?: null,
         'call_notes' => trim($callNotes ?? '') ?: null,
         'opened_at' => $openedAt ?: now(),
     ]);
@@ -466,7 +473,7 @@ function jobAcceptsTasks($job) {
 
 // Update editable job fields (admin)
 function updateJobFields($jobId, array $fields) {
-    $allowed = ['name', 'customer_name', 'phone', 'call_notes', 'admin_notes', 'opened_at'];
+    $allowed = ['name', 'customer_name', 'phone', 'email', 'call_notes', 'admin_notes', 'opened_at'];
     $setClauses = [];
     $params = ['id' => $jobId];
     foreach ($allowed as $field) {
@@ -566,12 +573,12 @@ function deleteJob($jobId) {
 }
 
 // Known customers and locations for the call-log autocomplete.
-// Customers carry their most recent location and phone so the form can
-// prefill them. Locations are derived from job names ("Customer - Location").
+// Customers carry their most recent location, phone, and email so the form
+// can prefill them. Locations are derived from job names ("Customer - Location").
 function getCallSuggestions() {
     $pdo = getDbConnection();
     $rows = $pdo->query("
-        SELECT name, customer_name, phone FROM jobs
+        SELECT name, customer_name, phone, email FROM jobs
         WHERE is_system = 0 ORDER BY opened_at
     ")->fetchAll();
     $customers = [];
@@ -591,6 +598,7 @@ function getCallSuggestions() {
                 'name' => $customer,
                 'location' => $location ?: ($customers[$key]['location'] ?? ''),
                 'phone' => trim($row['phone'] ?? '') ?: ($customers[$key]['phone'] ?? ''),
+                'email' => trim($row['email'] ?? '') ?: ($customers[$key]['email'] ?? ''),
             ];
             if ($location !== '') {
                 $locations[$location] = true;
@@ -821,6 +829,7 @@ function jobExportData($jobId) {
             'status_label' => STATUS_LABELS[$job['status']] ?? $job['status'],
             'customer_name' => $job['customer_name'],
             'phone' => $job['phone'],
+            'email' => $job['email'],
             'tags' => $tags,
             'call_notes' => $job['call_notes'],
             'admin_notes' => $job['admin_notes'],
