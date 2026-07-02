@@ -395,8 +395,10 @@ function renderJobCards($jobs, $group, $statusFilter, $q, $tag = '', $flag = '')
              hx-target="#content" hx-swap="innerHTML show:window:top">
             <div class="job-card-top">
                 <span class="job-card-name"><?= h($job['name']) ?></span>
-                <?= statusBadge($job['status']) ?>
-                <?php if ($group === 'active' && !empty($job['job_complete'])): ?><span class="badge badge-complete">✓ Job complete</span><?php endif; ?>
+                <span class="job-card-badges">
+                    <?php if ($group === 'active' && !empty($job['job_complete'])): ?><span class="badge badge-complete">✓ Job complete</span><?php endif; ?>
+                    <?= statusBadge($job['status']) ?>
+                </span>
             </div>
             <?php if (!empty($job['on_location_techs'])): ?>
             <div class="on-location">📍 On location: <?= h(str_replace(',', ', ', $job['on_location_techs'])) ?></div>
@@ -1578,12 +1580,19 @@ function exportTechCsv($tech, $month) {
 
         .job-card-top {
             display: flex;
-            justify-content: space-between;
             align-items: center;
             gap: 12px;
         }
 
-        .job-card-name { font-weight: 600; font-size: 15px; }
+        .job-card-name { font-weight: 600; font-size: 15px; flex: 1; min-width: 0; }
+
+        /* Keep every card's badges grouped at the right edge so the list scans */
+        .job-card-badges {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
 
         .job-card-meta {
             display: flex;
