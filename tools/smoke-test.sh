@@ -402,6 +402,43 @@ check "months CSV export" 'Month,"Jobs Completed"' "$OUT"
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-month-csv' --data-urlencode "month=$(date +%Y-%m)")
 check "month detail CSV export" 'Job,Customer,Phone,Status' "$OUT"
 
+# --- "Job complete" endpoint: fuzzy note match, date filter, admin gate ---
+# A job a tech flagged done (run-on/misspelled note) completed 2026-06-20...
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Fin\",\"location\":\"8 Fir\"}")
+FIN_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Fin")!==false){echo $j["id"];break;}')
+form --data-urlencode "token=$ADMIN" --data-urlencode 'action=add-task' --data-urlencode "id=$FIN_ID" \
+    --data-urlencode 'tech_name=Tim' --data-urlencode 'start_date=2026-06-20' --data-urlencode 'start_time=09:00' \
+    --data-urlencode 'end_date=2026-06-20' --data-urlencode 'end_time=11:00' --data-urlencode 'notes=- JobCompletd!' >/dev/null
+# ...and one whose note is the OPPOSITE - must never match
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Wip\",\"location\":\"2 Ash\"}")
+WIP_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Wip")!==false){echo $j["id"];break;}')
+form --data-urlencode "token=$ADMIN" --data-urlencode 'action=add-task' --data-urlencode "id=$WIP_ID" \
+    --data-urlencode 'tech_name=Tim' --data-urlencode 'start_date=2026-06-21' --data-urlencode 'start_time=09:00' \
+    --data-urlencode 'end_date=2026-06-21' --data-urlencode 'end_time=11:00' --data-urlencode 'notes=job incomplete, still working' >/dev/null
+
+cj() { curl -s "$BASE/completed-jobs.php?$1"; }
+OUT=$(cj "token=$ADMIN&since=2026-06-01")
+check "completed-jobs fuzzy-matches a done note" 'Fin - 8 Fir' "$OUT"
+check "completed-jobs reports who completed it" '"completed_by":"Tim"' "$OUT"
+if [[ "$OUT" == *'Wip - 2 Ash'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - completed-jobs excludes 'incomplete' notes"
+else
+    PASS=$((PASS+1)); echo "ok   - completed-jobs excludes 'incomplete' notes"
+fi
+# Date filter: cutoff after the completion drops the job
+OUT=$(cj "token=$ADMIN&since=2026-06-30")
+if [[ "$OUT" == *'Fin - 8 Fir'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - completed-jobs date filter excludes older completions"
+else
+    PASS=$((PASS+1)); echo "ok   - completed-jobs date filter excludes older completions"
+fi
+# Admin gate + input validation
+check "completed-jobs rejects bad token" 'Invalid admin token' "$(cj "token=wrong&since=2026-06-01")"
+check "completed-jobs requires a date"   'Provide a date'      "$(cj "token=$ADMIN")"
+check "completed-jobs rejects bad date"  'Invalid date'        "$(cj "token=$ADMIN&since=nope")"
+# POST JSON body works too
+check "completed-jobs accepts POST JSON" '"success":true' "$(post completed-jobs.php "{\"token\":\"$ADMIN\",\"since\":\"2026-06-01\"}")"
+
 # --- Reports ---
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-reports')
 check "monthly report has data" '<td>1</td>' "$OUT"

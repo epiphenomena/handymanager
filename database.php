@@ -749,6 +749,104 @@ function getClockTaskMonths() {
 }
 
 // ---------------------------------------------------------------------------
+// "Job complete" detection (techs flag a finished job in their task notes)
+// ---------------------------------------------------------------------------
+
+// Fuzzy check: does a task note say the job is complete? Techs jot something
+// like "- job complete". This tolerates:
+//   - case            ("Job Complete", "JOB COMPLETE")
+//   - punctuation     ("- job complete", "job/complete", "job. completed")
+//   - spacing / run-on ("jobcomplete", "jobcompletd")
+//   - minor spelling  ("job complet", "job completd", "completed the job")
+// It requires BOTH a "job" word and a "complete"-like word close together so
+// unrelated notes that merely mention "complete" - or say "incomplete", the
+// opposite - don't match.
+function taskNoteSaysComplete($notes) {
+    if ($notes === null) {
+        return false;
+    }
+    $lower = strtolower($notes);
+
+    // Punctuation/space-insensitive form catches run-together and punctuated
+    // variants: "- job complete", "jobcomplete", "job.completed" all collapse
+    // to a string containing "jobcomplet".
+    $collapsed = preg_replace('/[^a-z]/', '', $lower);
+    if ($collapsed !== '' && strpos($collapsed, 'jobcomplet') !== false) {
+        return true;
+    }
+
+    // Word-based fuzzy match: handles spelling and word order (e.g.
+    // "completed the job") by pairing a "job" word with a "complete"-like word
+    // within a few positions.
+    $words = preg_split('/[^a-z]+/', $lower, -1, PREG_SPLIT_NO_EMPTY);
+    $jobAt = [];
+    $doneAt = [];
+    foreach ($words as $i => $w) {
+        if ($w === 'job' || $w === 'jobs') {
+            $jobAt[] = $i;
+            continue;
+        }
+        if (strpos($w, 'incompl') !== false) {
+            continue; // "incomplete" is the opposite of done
+        }
+        if (strncmp($w, 'compl', 5) === 0 || levenshtein($w, 'complete') <= 2) {
+            $doneAt[] = $i;
+        }
+    }
+    foreach ($jobAt as $j) {
+        foreach ($doneAt as $d) {
+            if (abs($d - $j) <= 3) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Jobs a tech flagged complete in a task note, where that completion happened
+// after $since ('Y-m-d H:i:s'). "Completion time" is the task end time (or its
+// start time if still open). One record per job, using its latest matching
+// task, newest first.
+function getCompletedJobsSince($since) {
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("
+        SELECT t.tech_name, t.notes,
+               COALESCE(t.end_time, t.start_time) AS completed_at,
+               j.id AS job_id, j.name AS job_name, j.status AS job_status,
+               j.customer_name, j.phone
+        FROM tasks t JOIN jobs j ON j.id = t.job_id
+        WHERE j.is_system = 0
+          AND t.notes IS NOT NULL AND TRIM(t.notes) <> ''
+          AND COALESCE(t.end_time, t.start_time) > :since
+        ORDER BY completed_at DESC
+    ");
+    $stmt->execute(['since' => $since]);
+
+    $byJob = [];
+    foreach ($stmt->fetchAll() as $r) {
+        if (!taskNoteSaysComplete($r['notes'])) {
+            continue;
+        }
+        $jid = (int)$r['job_id'];
+        if (isset($byJob[$jid])) {
+            continue; // rows are newest-first, so keep the latest per job
+        }
+        $byJob[$jid] = [
+            'id' => $jid,
+            'name' => $r['job_name'],
+            'customer_name' => $r['customer_name'],
+            'phone' => $r['phone'],
+            'status' => $r['job_status'],
+            'tags' => array_column(getTagsForJob($jid), 'name'),
+            'completed_at' => $r['completed_at'],
+            'completed_by' => $r['tech_name'],
+            'completion_note' => $r['notes'],
+        ];
+    }
+    return array_values($byJob);
+}
+
+// ---------------------------------------------------------------------------
 // Reports
 // ---------------------------------------------------------------------------
 

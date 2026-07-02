@@ -89,6 +89,23 @@ A simplified single-purpose page for the administrative assistant: token
 gate on first visit, then just the call form. Same autocomplete/prefill
 behavior as the admin Log Call tab.
 
+### "Job complete" endpoint — `completed-jobs.php`
+
+An admin-token-protected JSON endpoint for scripts/AI agents. Ping it with a
+date and it returns the jobs a tech flagged as finished after that date —
+detected by fuzzy-matching a "job complete" note in their task notes
+(`taskNoteSaysComplete()` tolerates case, punctuation, run-on spelling, and
+minor typos, and rejects "incomplete"). "Completion time" is the task's end
+time (or start time if still open). Accepts `token` + `since` (aliases:
+`date`, `after`) via GET query string or a POST form/JSON body:
+
+```
+GET completed-jobs.php?token=ADMIN_TOKEN&since=2026-06-01
+-> {"success":true,"since":"2026-06-01 00:00:00","count":N,"jobs":[
+     {"id","name","customer_name","phone","status","tags",
+      "completed_at","completed_by","completion_note"}, ...]}
+```
+
 ### Backend
 
 Hand-written vanilla PHP, no dependencies, SQLite storage.
