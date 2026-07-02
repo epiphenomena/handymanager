@@ -424,47 +424,75 @@ check "months CSV export" 'Month,"Jobs Completed"' "$OUT"
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-month-csv' --data-urlencode "month=$(date +%Y-%m)")
 check "month detail CSV export" 'Job,Customer,Phone,Status' "$OUT"
 
-# --- "Job complete" endpoint: fuzzy note match, date filter, admin gate ---
-# A job a tech flagged done (run-on/misspelled note) completed 2026-06-20...
+# --- Active-jobs review flags: On Location + Job Complete ---
+# Fin: a tech's note fuzzy-matches "job complete" (job stays in progress)
 OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Fin\",\"location\":\"8 Fir\"}")
 FIN_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Fin")!==false){echo $j["id"];break;}')
 form --data-urlencode "token=$ADMIN" --data-urlencode 'action=add-task' --data-urlencode "id=$FIN_ID" \
     --data-urlencode 'tech_name=Tim' --data-urlencode 'start_date=2026-06-20' --data-urlencode 'start_time=09:00' \
     --data-urlencode 'end_date=2026-06-20' --data-urlencode 'end_time=11:00' --data-urlencode 'notes=- JobCompletd!' >/dev/null
-# ...and one whose note is the OPPOSITE - must never match
+# Wip: the OPPOSITE note ("incomplete") - must never be flagged complete
 OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Wip\",\"location\":\"2 Ash\"}")
 WIP_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Wip")!==false){echo $j["id"];break;}')
 form --data-urlencode "token=$ADMIN" --data-urlencode 'action=add-task' --data-urlencode "id=$WIP_ID" \
     --data-urlencode 'tech_name=Tim' --data-urlencode 'start_date=2026-06-21' --data-urlencode 'start_time=09:00' \
     --data-urlencode 'end_date=2026-06-21' --data-urlencode 'end_time=11:00' --data-urlencode 'notes=job incomplete, still working' >/dev/null
+# Onsite: a tech is clocked in (an open task, no end time)
+OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Onsite\",\"location\":\"1 A St\"}")
+ONS_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Onsite")!==false){echo $j["id"];break;}')
+post create-task.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Dana\",\"job_id\":$ONS_ID,\"start_time\":\"2026-06-25 09:00\"}" >/dev/null
 
-cj() { curl -s "$BASE/completed-jobs.php?$1"; }
-OUT=$(cj "token=$ADMIN&since=2026-06-01")
-check "completed-jobs fuzzy-matches a done note" 'Fin - 8 Fir' "$OUT"
-check "completed-jobs reports who completed it" '"completed_by":"Tim"' "$OUT"
-# Each job carries the full single-job export shape (job/tasks/summary) plus completion
-check "completed-jobs includes full task detail" '"tasks"' "$OUT"
-check "completed-jobs includes summary block"    '"summary"' "$OUT"
-check "completed-jobs includes job detail fields" '"status_label"' "$OUT"
-check "completed-jobs includes completion block" '"completion"' "$OUT"
-if [[ "$OUT" == *'Wip - 2 Ash'* ]]; then
-    FAIL=$((FAIL+1)); echo "FAIL - completed-jobs excludes 'incomplete' notes"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=active')
+check "active list has flag filter pills" 'Job Complete' "$OUT"
+check "active card marks a tech-completed job" 'badge-complete' "$OUT"
+check "active card shows clocked-in tech name" 'On location: Dana' "$OUT"
+
+# Job Complete filter: shows the flagged job, hides the unflagged + "incomplete"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=active' --data-urlencode 'flag=job_complete')
+check "job_complete filter shows the flagged job" 'Fin - 8 Fir' "$OUT"
+if [[ "$OUT" == *'Onsite - 1 A St'* || "$OUT" == *'Wip - 2 Ash'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - job_complete filter excludes unflagged / incomplete jobs"
 else
-    PASS=$((PASS+1)); echo "ok   - completed-jobs excludes 'incomplete' notes"
+    PASS=$((PASS+1)); echo "ok   - job_complete filter excludes unflagged / incomplete jobs"
 fi
-# Date filter: cutoff after the completion drops the job
-OUT=$(cj "token=$ADMIN&since=2026-06-30")
+
+# On Location filter: shows the clocked-in job, hides the rest
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-jobs' --data-urlencode 'group=active' --data-urlencode 'flag=on_location')
+check "on_location filter shows the clocked-in job" 'Onsite - 1 A St' "$OUT"
 if [[ "$OUT" == *'Fin - 8 Fir'* ]]; then
-    FAIL=$((FAIL+1)); echo "FAIL - completed-jobs date filter excludes older completions"
+    FAIL=$((FAIL+1)); echo "FAIL - on_location filter excludes jobs with nobody clocked in"
 else
-    PASS=$((PASS+1)); echo "ok   - completed-jobs date filter excludes older completions"
+    PASS=$((PASS+1)); echo "ok   - on_location filter excludes jobs with nobody clocked in"
+fi
+
+# --- Billing feed endpoint: ready-for-billing jobs only (admin-approved) ---
+cj() { curl -s "$BASE/completed-jobs.php?$1"; }
+# Fin is tech-flagged complete but NOT yet ready for billing -> not in the feed
+OUT=$(cj "token=$ADMIN&since=2026-01-01")
+if [[ "$OUT" == *'Fin - 8 Fir'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - billing feed excludes jobs not yet ready for billing"
+else
+    PASS=$((PASS+1)); echo "ok   - billing feed excludes jobs not yet ready for billing"
+fi
+# Admin approves Fin -> ready for billing -> now in the feed, with full detail
+form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$FIN_ID" --data-urlencode 'status=ready_for_billing' >/dev/null
+OUT=$(cj "token=$ADMIN&since=2026-01-01")
+check "billing feed includes an approved job" 'Fin - 8 Fir' "$OUT"
+check "billing feed job carries full task detail" '"tasks"' "$OUT"
+check "billing feed job carries summary block" '"summary"' "$OUT"
+check "billing feed job carries job detail fields" '"status_label"' "$OUT"
+# Date filter is on ready_for_billing_at (approved ~now) -> a future cutoff excludes
+OUT=$(cj "token=$ADMIN&since=2030-01-01")
+if [[ "$OUT" == *'Fin - 8 Fir'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - billing feed date filter excludes older approvals"
+else
+    PASS=$((PASS+1)); echo "ok   - billing feed date filter excludes older approvals"
 fi
 # Admin gate + input validation
-check "completed-jobs rejects bad token" 'Invalid admin token' "$(cj "token=wrong&since=2026-06-01")"
-check "completed-jobs requires a date"   'Provide a date'      "$(cj "token=$ADMIN")"
-check "completed-jobs rejects bad date"  'Invalid date'        "$(cj "token=$ADMIN&since=nope")"
-# POST JSON body works too
-check "completed-jobs accepts POST JSON" '"success":true' "$(post completed-jobs.php "{\"token\":\"$ADMIN\",\"since\":\"2026-06-01\"}")"
+check "billing feed rejects bad token" 'Invalid admin token' "$(cj "token=wrong&since=2026-01-01")"
+check "billing feed requires a date"   'Provide a date'      "$(cj "token=$ADMIN")"
+check "billing feed rejects bad date"  'Invalid date'        "$(cj "token=$ADMIN&since=nope")"
+check "billing feed accepts POST JSON" '"success":true' "$(post completed-jobs.php "{\"token\":\"$ADMIN\",\"since\":\"2026-01-01\"}")"
 
 # --- Reports ---
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-reports')

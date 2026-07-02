@@ -1,13 +1,20 @@
 <?php
-// completed-jobs.php - Admin JSON endpoint: jobs a tech flagged as finished
-// ("- job complete", fuzzy-matched in their task notes) whose completion is
-// after a given date.
+// completed-jobs.php - Admin JSON endpoint: jobs the admin has approved for
+// invoicing - i.e. moved to "ready for billing" - after a given date.
+//
+// Techs flag a finished job with a "job complete" note; that shows up as a
+// mark/filter on the admin active-jobs list. Once the admin reviews it and
+// marks the job ready for billing, it appears here for an AI invoicer to pick
+// up. So this feed is the *approved* queue, not raw tech claims.
 //
 // Ping it with the admin token and a date; it returns JSON. Parameters may be
 // given as a GET query string, a POST form body, or a POST JSON body:
 //
 //   GET  completed-jobs.php?token=ADMIN_TOKEN&since=2026-06-01
 //   POST {"token":"ADMIN_TOKEN","since":"2026-06-01"}
+//
+// "since" is compared against each job's ready_for_billing_at, so pass your
+// last-check time to poll for newly-approved jobs.
 //
 // The admin token is the only access control and is verified on every request.
 
@@ -45,7 +52,7 @@ if ($since === false) {
     sendJsonResponse(['success' => false, 'error' => 'Invalid date: ' . $sinceRaw], 400);
 }
 
-$jobs = getCompletedJobsSince($since);
+$jobs = getReadyForBillingJobsSince($since);
 sendJsonResponse([
     'success' => true,
     'since' => $since,

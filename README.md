@@ -61,8 +61,13 @@ token (kept in localStorage) attached and verified on **every** request.
 - **Active / Billing / Paid** — jobs grouped by status (active = open /
   in progress / on hold; billing = ready for billing / billed; paid =
   paid / closed), newest first. Each tab has a sticky header with status
-  sub-filter pills and a job-name search box (partial, token-based —
-  "smith oak" matches "Smith - 412 Oak Ave"); the two compose. Every job
+  sub-filter pills, a tag filter, and a job-name search box (partial,
+  token-based — "smith oak" matches "Smith - 412 Oak Ave"); they compose.
+  The **Active** tab adds two review filters: **On Location** (a tech is
+  clocked in — has an open task; the card shows the tech's name) and
+  **Job Complete** (a tech's task note fuzzy-matches "job complete" via
+  `taskNoteSaysComplete()`; the card gets a ✓ badge). These help the office
+  spot jobs a tech considers finished and approve them for billing. Every job
   card carries status buttons so jobs can be moved forward or backward
   through the stages (resume, close, mark billed, back to ready for
   billing, etc.) directly from the list. Cards show status, task counts,
@@ -90,19 +95,21 @@ A simplified single-purpose page for the administrative assistant: token
 gate on first visit, then just the call form. Same autocomplete/prefill
 behavior as the admin Log Call tab.
 
-### "Job complete" endpoint — `completed-jobs.php`
+### Billing feed endpoint — `completed-jobs.php`
 
-An admin-token-protected JSON endpoint for scripts/AI agents. Ping it with a
-date and it returns the jobs a tech flagged as finished after that date —
-detected by fuzzy-matching a "job complete" note in their task notes
-(`taskNoteSaysComplete()` tolerates case, punctuation, run-on spelling, and
-minor typos, and rejects "incomplete"). "Completion time" is the task's end
-time (or start time if still open). Accepts `token` + `since` (aliases:
-`date`, `after`) via GET query string or a POST form/JSON body:
+An admin-token-protected JSON endpoint for scripts/AI agents (e.g. an
+invoicer). Ping it with a date and it returns the jobs the admin has approved
+for billing — i.e. moved to **ready for billing** — with `ready_for_billing_at`
+after that date. This is the *approved* queue, not raw tech claims: a tech
+first flags a job "job complete" (surfaced as the active-list mark/filter,
+above); once the office reviews it and marks it ready for billing, it appears
+here. Accepts `token` + `since` (aliases: `date`, `after`) via GET query
+string or a POST form/JSON body; pass your last-check time to poll for
+newly-approved jobs.
 
 Each job is the **full single-job export** (same shape as the admin "JSON ↓"
-export — `job` fields, every `task`, and a `summary`) plus a `completion`
-block naming the task that flagged it done:
+export): `job` fields, every `task` (the tech's completion note is visible
+there), and a `summary`.
 
 ```
 GET completed-jobs.php?token=ADMIN_TOKEN&since=2026-06-01
@@ -112,8 +119,7 @@ GET completed-jobs.php?token=ADMIN_TOKEN&since=2026-06-01
                    tags, call_notes, admin_notes, opened_at,
                    ready_for_billing_at, billed_at, paid_at, closed_at},
        "tasks":   [{tech_name, start_time, end_time, hours, notes}, ...],
-       "summary": {task_count, total_hours},
-       "completion": {completed_at, completed_by, note}
+       "summary": {task_count, total_hours}
      }, ...]}
 ```
 

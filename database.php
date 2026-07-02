@@ -290,11 +290,19 @@ function getJobById($jobId) {
 // Jobs (non-system) in the given statuses, with task aggregates.
 // $search does a partial, token-based match on the job name: each
 // whitespace-separated token must appear (any order). $tagId, when set,
-// restricts to jobs carrying that tag.
+// restricts to jobs carrying that tag. $flag ('on_location' | 'job_complete')
+// narrows to jobs with a tech currently clocked in, or a tech's "job complete"
+// note (fuzzy) - the two active-jobs review filters.
 //
-// Tags are joined via correlated subqueries, NOT a LEFT JOIN: a many-to-many
-// join would multiply rows and break the task COUNT/SUM aggregates.
-function getJobsByStatus(array $statuses, $search = '', $tagId = null) {
+// Tags, clocked-in techs, and task notes are pulled via correlated subqueries,
+// NOT a LEFT JOIN: a one-to-many join would multiply rows and break the task
+// COUNT/SUM aggregates.
+//
+// Each returned row also carries:
+//   on_location_techs - comma-separated names of techs with an open task
+//   on_location       - bool: is anyone clocked in
+//   job_complete      - bool: does any task note say "job complete" (fuzzy)
+function getJobsByStatus(array $statuses, $search = '', $tagId = null, $flag = '') {
     $pdo = getDbConnection();
     $placeholders = implode(',', array_fill(0, count($statuses), '?'));
     $where = ['j.is_system = 0', "j.status IN ($placeholders)"];
@@ -315,7 +323,12 @@ function getJobsByStatus(array $statuses, $search = '', $tagId = null) {
                MAX(COALESCE(t.end_time, t.start_time)) AS last_activity,
                (SELECT GROUP_CONCAT(tg.name, ', ')
                 FROM job_tags jt JOIN tags tg ON tg.id = jt.tag_id
-                WHERE jt.job_id = j.id) AS tags
+                WHERE jt.job_id = j.id) AS tags,
+               (SELECT GROUP_CONCAT(DISTINCT tk.tech_name)
+                FROM tasks tk WHERE tk.job_id = j.id AND tk.end_time IS NULL) AS on_location_techs,
+               (SELECT GROUP_CONCAT(tk.notes, char(30))
+                FROM tasks tk WHERE tk.job_id = j.id
+                  AND tk.notes IS NOT NULL AND TRIM(tk.notes) <> '') AS task_notes_concat
         FROM jobs j
         LEFT JOIN tasks t ON t.job_id = j.id
         WHERE " . implode(' AND ', $where) . "
@@ -323,7 +336,31 @@ function getJobsByStatus(array $statuses, $search = '', $tagId = null) {
         ORDER BY COALESCE(MAX(COALESCE(t.end_time, t.start_time)), j.opened_at) DESC
     ");
     $stmt->execute($params);
-    return $stmt->fetchAll();
+    $jobs = $stmt->fetchAll();
+
+    // Derive the two review flags. "job complete" needs the fuzzy PHP matcher,
+    // so each task note is checked separately (notes are joined with an ASCII
+    // record separator that can't appear in typed text, then split back apart).
+    foreach ($jobs as &$job) {
+        $job['on_location'] = !empty($job['on_location_techs']);
+        $job['job_complete'] = false;
+        if (!empty($job['task_notes_concat'])) {
+            foreach (explode(chr(30), $job['task_notes_concat']) as $note) {
+                if (taskNoteSaysComplete($note)) {
+                    $job['job_complete'] = true;
+                    break;
+                }
+            }
+        }
+    }
+    unset($job);
+
+    if ($flag === 'on_location') {
+        $jobs = array_values(array_filter($jobs, fn($j) => $j['on_location']));
+    } elseif ($flag === 'job_complete') {
+        $jobs = array_values(array_filter($jobs, fn($j) => $j['job_complete']));
+    }
+    return $jobs;
 }
 
 // ---------------------------------------------------------------------------
@@ -864,45 +901,26 @@ function taskNoteSaysComplete($notes) {
     return false;
 }
 
-// Jobs a tech flagged complete in a task note, where that completion happened
-// after $since ('Y-m-d H:i:s'). "Completion time" is the task end time (or its
-// start time if still open). One record per job, using its latest matching
-// task, newest first. Each record is the full jobExportData() shape (job
-// fields + every task + summary) plus a "completion" block describing which
-// task flagged it done.
-function getCompletedJobsSince($since) {
+// Jobs the admin has moved to "ready for billing" after $since ('Y-m-d H:i:s',
+// compared against ready_for_billing_at), newest first. These are the jobs the
+// admin has reviewed and approved for invoicing (after seeing the tech's "job
+// complete" flag on the active list). Each record is the full jobExportData()
+// shape (job fields + every task + summary); the tech's completion note is
+// visible within the tasks. Powers the completed-jobs.php billing feed.
+function getReadyForBillingJobsSince($since) {
     $pdo = getDbConnection();
     $stmt = $pdo->prepare("
-        SELECT t.tech_name, t.notes,
-               COALESCE(t.end_time, t.start_time) AS completed_at,
-               j.id AS job_id
-        FROM tasks t JOIN jobs j ON j.id = t.job_id
-        WHERE j.is_system = 0
-          AND t.notes IS NOT NULL AND TRIM(t.notes) <> ''
-          AND COALESCE(t.end_time, t.start_time) > :since
-        ORDER BY completed_at DESC
+        SELECT id FROM jobs
+        WHERE is_system = 0
+          AND status = 'ready_for_billing'
+          AND ready_for_billing_at > :since
+        ORDER BY ready_for_billing_at DESC
     ");
     $stmt->execute(['since' => $since]);
 
-    $seen = [];
     $out = [];
-    foreach ($stmt->fetchAll() as $r) {
-        if (!taskNoteSaysComplete($r['notes'])) {
-            continue;
-        }
-        $jid = (int)$r['job_id'];
-        if (isset($seen[$jid])) {
-            continue; // rows are newest-first, so keep the latest per job
-        }
-        $seen[$jid] = true;
-        $data = jobExportData($jid);
-        // The task that flagged the job complete (the reason it's in this list)
-        $data['completion'] = [
-            'completed_at' => $r['completed_at'],
-            'completed_by' => $r['tech_name'],
-            'note' => $r['notes'],
-        ];
-        $out[] = $data;
+    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $jid) {
+        $out[] = jobExportData((int)$jid);
     }
     return $out;
 }

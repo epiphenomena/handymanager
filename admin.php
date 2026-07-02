@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     switch ($action) {
         case 'view-jobs':
             renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '',
-                $_POST['tag'] ?? '', null, false, !empty($_POST['cards_only']));
+                $_POST['tag'] ?? '', $_POST['flag'] ?? '', null, false, !empty($_POST['cards_only']));
             break;
 
         case 'view-job':
@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // re-render whichever the request came from.
             if (($_POST['return'] ?? '') === 'list') {
                 renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '',
-                    $_POST['tag'] ?? '', $ok ? null : $message, !$ok);
+                    $_POST['tag'] ?? '', $_POST['flag'] ?? '', $ok ? null : $message, !$ok);
             } else {
                 renderJobDetail((int)$_POST['id'], $ok ? 'Status updated' : $message, !$ok);
             }
@@ -100,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'delete-job':
             deleteJob((int)$_POST['id']);
             renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '',
-                $_POST['tag'] ?? '', 'Job deleted');
+                $_POST['tag'] ?? '', $_POST['flag'] ?? '', 'Job deleted');
             break;
 
         case 'customer-search':
@@ -307,27 +307,32 @@ function flash($message, $isError = false) {
 // Fragments
 // ---------------------------------------------------------------------------
 
-function renderJobsView($group, $statusFilter = '', $q = '', $tag = '', $message = null, $isError = false, $cardsOnly = false) {
+function renderJobsView($group, $statusFilter = '', $q = '', $tag = '', $flag = '', $message = null, $isError = false, $cardsOnly = false) {
     $group = isset(STATUS_GROUPS[$group]) ? $group : 'active';
     $groupStatuses = STATUS_GROUPS[$group];
+    // The review flags (on location / job complete) only apply to active jobs.
+    if ($group !== 'active') {
+        $flag = '';
+    }
     // A status filter narrows the group to a single status (must belong to it)
     $statuses = ($statusFilter !== '' && in_array($statusFilter, $groupStatuses, true))
         ? [$statusFilter] : $groupStatuses;
-    $jobs = getJobsByStatus($statuses, $q, $tag);
+    $jobs = getJobsByStatus($statuses, $q, $tag, $flag);
 
     // Live search re-renders only the cards (so the search box keeps focus)
     // and updates the header count out-of-band.
     if ($cardsOnly) {
-        renderJobCards($jobs, $group, $statusFilter, $q, $tag);
+        renderJobCards($jobs, $group, $statusFilter, $q, $tag, $flag);
         ?>
         <span id="job-count" class="muted" hx-swap-oob="true"><?= count($jobs) ?> job<?= count($jobs) === 1 ? '' : 's' ?></span>
         <?php
         return;
     }
 
-    // Carry the current search + tag filter through pill clicks so they aren't lost
-    $pillVals = fn($st) => h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $st, 'q' => $q, 'tag' => $tag]));
-    $tagPillVals = fn($t) => h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $statusFilter, 'q' => $q, 'tag' => $t]));
+    // Carry the current search + tag + flag filters through pill clicks so none is lost
+    $pillVals = fn($st) => h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $st, 'q' => $q, 'tag' => $tag, 'flag' => $flag]));
+    $tagPillVals = fn($t) => h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $statusFilter, 'q' => $q, 'tag' => $t, 'flag' => $flag]));
+    $flagPillVals = fn($fl) => h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $statusFilter, 'q' => $q, 'tag' => $tag, 'flag' => $fl]));
     $allTags = getAllTags();
     ?>
     <?= flash($message, $isError) ?>
@@ -338,7 +343,7 @@ function renderJobsView($group, $statusFilter = '', $q = '', $tag = '', $message
             <input type="search" class="job-search" name="q" value="<?= h($q) ?>" placeholder="Search job name…"
                 autocomplete="off" hx-post="admin.php" hx-target="#job-cards" hx-swap="outerHTML"
                 hx-trigger="keyup changed delay:200ms, search"
-                hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $statusFilter, 'tag' => $tag, 'cards_only' => 1])) ?>'>
+                hx-vals='<?= h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $statusFilter, 'tag' => $tag, 'flag' => $flag, 'cards_only' => 1])) ?>'>
             <?php if (count($groupStatuses) > 1): ?>
             <div class="filter-pills">
                 <button class="pill <?= $statusFilter === '' ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
@@ -347,6 +352,16 @@ function renderJobsView($group, $statusFilter = '', $q = '', $tag = '', $message
                 <button class="pill <?= $statusFilter === $st ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
                     hx-vals='<?= $pillVals($st) ?>'><?= h(STATUS_LABELS[$st]) ?></button>
                 <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+            <?php if ($group === 'active'): ?>
+            <div class="filter-pills filter-pills-flags">
+                <button class="pill <?= $flag === '' ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
+                    hx-vals='<?= $flagPillVals('') ?>'>All</button>
+                <button class="pill <?= $flag === 'on_location' ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
+                    hx-vals='<?= $flagPillVals('on_location') ?>'>📍 On Location</button>
+                <button class="pill <?= $flag === 'job_complete' ? 'active' : '' ?>" hx-post="admin.php" hx-target="#content"
+                    hx-vals='<?= $flagPillVals('job_complete') ?>'>✓ Job Complete</button>
             </div>
             <?php endif; ?>
             <?php if (!empty($allTags)): ?>
@@ -362,12 +377,12 @@ function renderJobsView($group, $statusFilter = '', $q = '', $tag = '', $message
         </div>
     </div>
 
-    <?php renderJobCards($jobs, $group, $statusFilter, $q, $tag); ?>
+    <?php renderJobCards($jobs, $group, $statusFilter, $q, $tag, $flag); ?>
     <?php
 }
 
 // The job cards list (its own container so live search can swap just this part)
-function renderJobCards($jobs, $group, $statusFilter, $q, $tag = '') {
+function renderJobCards($jobs, $group, $statusFilter, $q, $tag = '', $flag = '') {
     ?>
     <div class="job-cards" id="job-cards">
         <?php if (empty($jobs)): ?>
@@ -379,7 +394,11 @@ function renderJobCards($jobs, $group, $statusFilter, $q, $tag = '') {
             <div class="job-card-top">
                 <span class="job-card-name"><?= h($job['name']) ?></span>
                 <?= statusBadge($job['status']) ?>
+                <?php if ($group === 'active' && !empty($job['job_complete'])): ?><span class="badge badge-complete">✓ Job complete</span><?php endif; ?>
             </div>
+            <?php if (!empty($job['on_location_techs'])): ?>
+            <div class="on-location">📍 On location: <?= h(str_replace(',', ', ', $job['on_location_techs'])) ?></div>
+            <?php endif; ?>
             <div class="job-card-meta">
                 <?php if ($job['phone']): ?><span><?= h($job['phone']) ?></span><?php endif; ?>
                 <span><?= (int)$job['task_count'] ?> task<?= (int)$job['task_count'] === 1 ? '' : 's' ?><?php
@@ -402,7 +421,7 @@ function renderJobCards($jobs, $group, $statusFilter, $q, $tag = '') {
             <div class="job-card-notes"><?= h(mb_strimwidth($job['admin_notes'], 0, 220, '…')) ?></div>
             <?php endif; ?>
             <div class="job-card-actions">
-                <?php renderStatusButtons($job, ['return' => 'list', 'group' => $group, 'status_filter' => $statusFilter, 'q' => $q, 'tag' => $tag], 'btn-xs'); ?>
+                <?php renderStatusButtons($job, ['return' => 'list', 'group' => $group, 'status_filter' => $statusFilter, 'q' => $q, 'tag' => $tag, 'flag' => $flag], 'btn-xs'); ?>
             </div>
         </div>
         <?php endforeach; ?>
@@ -1588,6 +1607,16 @@ function exportTechCsv($tech, $month) {
         .badge-billed { background: #cffafe; color: #155e75; }
         .badge-paid { background: #dcfce7; color: #166534; }
         .badge-closed { background: #fee2e2; color: #991b1b; }
+        /* Tech flagged the job done in a note (active-list review aid) */
+        .badge-complete { background: #dcfce7; color: #166534; }
+
+        /* A tech is clocked in on this job */
+        .on-location {
+            margin-top: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #1e40af;
+        }
 
         /* Filter pills (tab sub-filters) and customer match chips */
         .filter-pills, .customer-matches {
@@ -1615,6 +1644,7 @@ function exportTechCsv($tech, $month) {
 
         /* Second pill row: tag filter, set apart from the status pills */
         .jobs-sticky .filter-pills-tags { padding-top: 6px; }
+        .jobs-sticky .filter-pills-flags { padding-top: 6px; }
 
         /* Tag chips on job cards / detail */
         .tag-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
