@@ -222,9 +222,15 @@ check "resumed job visible to techs again" 'Nguyen' "$OUT"
 OUT=$(post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Abbott\",\"location\":\"1 First St\"}")
 ABBOTT_ID=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Abbott")!==false){echo $j["id"];break;}')
 
-# Close it straight from the active list
+# Close it straight from the active list. A successful status change from a
+# card swaps ONLY the cards list (so the admin keeps their scroll place) - the
+# response is a #job-cards fragment, not the whole view with its header.
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ABBOTT_ID" --data-urlencode 'status=closed' --data-urlencode 'return=list' --data-urlencode 'group=active')
-check "close from list re-renders list" 'Active Jobs' "$OUT"
+if [[ "$OUT" == *'id="job-cards"'* && "$OUT" != *'class="view-header"'* ]]; then
+    PASS=$((PASS+1)); echo "ok   - status change from list swaps only the cards"
+else
+    FAIL=$((FAIL+1)); echo "FAIL - status change from list swaps only the cards"; echo "       got: $OUT"
+fi
 
 OUT=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}")
 if [[ "$OUT" == *'Abbott'* ]]; then
@@ -254,7 +260,7 @@ check "reopened job visible to techs again" 'Abbott' "$OUT"
 # Forward then backward through billing, all from the list
 form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ABBOTT_ID" --data-urlencode 'status=ready_for_billing' --data-urlencode 'return=list' --data-urlencode 'group=active' >/dev/null
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ABBOTT_ID" --data-urlencode 'status=billed' --data-urlencode 'return=list' --data-urlencode 'group=billing')
-check "advance to billed from list" 'Billing' "$OUT"
+check "advance to billed from list" '>Billed<' "$OUT"
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ABBOTT_ID" --data-urlencode 'status=ready_for_billing' --data-urlencode 'return=list' --data-urlencode 'group=billing')
 check "move back to ready for billing from list" '>Ready for Billing<' "$OUT"
 
@@ -468,6 +474,17 @@ if [[ "$OUT" == *'Fin - 8 Fir'* ]]; then
 else
     PASS=$((PASS+1)); echo "ok   - on_location filter excludes jobs with nobody clocked in"
 fi
+
+# A FAILED status change from a card (Onsite has a tech clocked in, so it can't
+# go ready-for-billing) re-targets the full view via response headers so the
+# error is visible, instead of silently swapping just the cards.
+HDRS=$(curl -s -D - -o /dev/null -X POST "$BASE/admin.php" \
+    --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ONS_ID" \
+    --data-urlencode 'status=ready_for_billing' --data-urlencode 'return=list' --data-urlencode 'group=active')
+check "failed list status change re-targets to full view" 'HX-Retarget: #content' "$HDRS"
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$ONS_ID" \
+    --data-urlencode 'status=ready_for_billing' --data-urlencode 'return=list' --data-urlencode 'group=active')
+check "failed list status change shows the error" 'Tasks still in progress' "$OUT"
 
 # --- Billing feed endpoint: ready-for-billing jobs only (admin-approved) ---
 cj() { curl -s "$BASE/completed-jobs.php?$1"; }

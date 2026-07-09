@@ -54,8 +54,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Status can be changed from a job list or from the detail view;
             // re-render whichever the request came from.
             if (($_POST['return'] ?? '') === 'list') {
-                renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '',
-                    $_POST['tag'] ?? '', $_POST['flag'] ?? '', $ok ? null : $message, !$ok);
+                if ($ok) {
+                    // Success: swap only the cards (the button targets #job-cards)
+                    // so the admin keeps their scroll place.
+                    renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '',
+                        $_POST['tag'] ?? '', $_POST['flag'] ?? '', null, false, true);
+                } else {
+                    // Failure: re-render the whole list at the top so the error
+                    // message is visible (override the card-only swap).
+                    header('HX-Retarget: #content');
+                    header('HX-Reswap: innerHTML show:window:top');
+                    renderJobsView($_POST['group'] ?? 'active', $_POST['status_filter'] ?? '', $_POST['q'] ?? '',
+                        $_POST['tag'] ?? '', $_POST['flag'] ?? '', $message, true);
+                }
             } else {
                 renderJobDetail((int)$_POST['id'], $ok ? 'Status updated' : $message, !$ok);
             }
@@ -320,12 +331,14 @@ function renderJobsView($group, $statusFilter = '', $q = '', $tag = '', $flag = 
         ? [$statusFilter] : $groupStatuses;
     $jobs = getJobsByStatus($statuses, $q, $tag, $flag);
 
-    // Live search re-renders only the cards (so the search box keeps focus)
-    // and updates the header count out-of-band.
+    // Live search and status changes from a card re-render only the cards
+    // (so the page keeps its scroll place / the search box keeps focus) and
+    // update the header count + flash slot out-of-band.
     if ($cardsOnly) {
         renderJobCards($jobs, $group, $statusFilter, $q, $tag, $flag);
         ?>
         <span id="job-count" class="muted" hx-swap-oob="true"><?= count($jobs) ?> job<?= count($jobs) === 1 ? '' : 's' ?></span>
+        <div id="jobs-flash" hx-swap-oob="true"><?= flash($message, $isError) ?></div>
         <?php
         return;
     }
@@ -336,7 +349,7 @@ function renderJobsView($group, $statusFilter = '', $q = '', $tag = '', $flag = 
     $flagPillVals = fn($fl) => h(json_encode(['action' => 'view-jobs', 'group' => $group, 'status_filter' => $statusFilter, 'q' => $q, 'tag' => $tag, 'flag' => $fl]));
     $allTags = getAllTags();
     ?>
-    <?= flash($message, $isError) ?>
+    <div id="jobs-flash"><?= flash($message, $isError) ?></div>
     <div class="jobs-sticky">
         <div class="view-header">
             <h2><?= h(GROUP_TITLES[$group] ?? 'Jobs') ?></h2>
@@ -495,6 +508,11 @@ function jobTransitions($job) {
 // re-render should land (a job list or the detail view). onclick stops the
 // click from also triggering the enclosing card's view-job request.
 function renderStatusButtons($job, array $returnVals, $size = 'btn-sm') {
+    // From a card, swap just the cards list so the admin keeps their scroll
+    // place; from the detail view, re-render the whole detail.
+    $isList = (($returnVals['return'] ?? '') === 'list');
+    $target = $isList ? '#job-cards' : '#content';
+    $swap = $isList ? 'outerHTML' : 'innerHTML';
     foreach (jobTransitions($job) as $t) {
         list($status, $label, $class) = $t;
         $vals = array_merge(
@@ -503,7 +521,7 @@ function renderStatusButtons($job, array $returnVals, $size = 'btn-sm') {
         );
         ?>
         <button class="btn <?= $class ?> <?= $size ?>" onclick="event.stopPropagation()"
-            hx-post="admin.php" hx-target="#content"
+            hx-post="admin.php" hx-target="<?= $target ?>" hx-swap="<?= $swap ?>"
             hx-vals='<?= h(json_encode($vals)) ?>'><?= h($label) ?></button>
         <?php
     }
