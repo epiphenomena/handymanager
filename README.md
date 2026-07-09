@@ -85,7 +85,8 @@ token (kept in localStorage) attached and verified on **every** request.
   Customer/location autocomplete from past jobs (freeform allowed); picking a
   known customer prefills their last location, phone, and email.
 - **Reports** — jobs completed per month (with status breakdown, hours and a
-  per-month drill-down), tasks per tech per month, and a customer lookup
+  per-month drill-down), tasks per tech per month, tasks by date range (set
+  one date to pull a single day, both for a range), and a customer lookup
   with fuzzy search that lists all of a customer's jobs. All exportable as
   CSV.
 

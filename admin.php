@@ -233,6 +233,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exportTechCsv($_POST['tech'] ?? '', $_POST['month'] ?? date('Y-m'));
             break;
 
+        case 'report-tasks-by-date':
+            renderTasksByDate($_POST['start_date'] ?? '', $_POST['end_date'] ?? '');
+            break;
+
+        case 'export-tasks-by-date-csv':
+            exportTasksByDateCsv($_POST['start_date'] ?? '', $_POST['end_date'] ?? '');
+            break;
+
         case 'export-months-csv':
             exportMonthsCsv();
             break;
@@ -1102,6 +1110,21 @@ function renderReports() {
     </div>
 
     <div class="panel">
+        <div class="panel-title"><label>Tasks by Date</label></div>
+        <form class="form-row report-controls" hx-post="admin.php" hx-target="#tasks-by-date-report" hx-trigger="change">
+            <input type="hidden" name="action" value="report-tasks-by-date">
+            <label>From
+                <input type="date" name="start_date" id="tbd-start">
+            </label>
+            <label>To
+                <input type="date" name="end_date" id="tbd-end">
+            </label>
+        </form>
+        <p class="muted hint">Set just one date to pull that single day; set both for a range.</p>
+        <div id="tasks-by-date-report"><?php renderTasksByDate('', ''); ?></div>
+    </div>
+
+    <div class="panel">
         <div class="panel-title"><label>Customer Lookup</label></div>
         <input type="search" id="customer-search" placeholder="Type a customer name…" autocomplete="off"
             hx-post="admin.php" hx-target="#customer-results" hx-trigger="keyup changed delay:200ms, search"
@@ -1240,6 +1263,98 @@ function renderTechReport($tech, $month) {
         <button type="submit" class="btn btn-ghost btn-sm">Export CSV</button>
     </form>
     <?php
+}
+
+// Resolve a From/To date pair for the tasks-by-date report. Each may be
+// 'YYYY-MM-DD' or blank. A blank side defaults to the other (so setting one
+// date pulls that single day); both blank defaults to today. Returns
+// [start, end] as 'YYYY-MM-DD' with start <= end, or [null, null] if a
+// provided value isn't a valid date.
+function resolveDateRange($start, $end) {
+    $norm = function ($d) {
+        $d = trim((string)$d);
+        if ($d === '') return '';
+        return (preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && strtotime($d)) ? $d : false;
+    };
+    $s = $norm($start);
+    $e = $norm($end);
+    if ($s === false || $e === false) return [null, null];
+    if ($s === '' && $e === '') { $s = $e = date('Y-m-d'); }
+    elseif ($s === '') { $s = $e; }
+    elseif ($e === '') { $e = $s; }
+    if ($s > $e) { $tmp = $s; $s = $e; $e = $tmp; }
+    return [$s, $e];
+}
+
+// Tasks within a date range (across all techs/jobs). A single date on either
+// side pulls that one day (see resolveDateRange).
+function renderTasksByDate($start, $end) {
+    list($s, $e) = resolveDateRange($start, $end);
+    if ($s === null) {
+        echo '<p class="muted">Pick a valid date to see tasks.</p>';
+        return;
+    }
+    $tasks = reportTasksByDateRange($s, $e);
+    $totalHours = 0;
+    foreach ($tasks as $task) {
+        $totalHours += (float)($task['hours'] ?? 0);
+    }
+    $range = ($s === $e) ? fmtDate($s) : fmtDate($s) . ' – ' . fmtDate($e);
+    ?>
+    <h4><?= h($range) ?> (<?= count($tasks) ?> task<?= count($tasks) === 1 ? '' : 's' ?>, <?= fmtHours($totalHours) ?>)</h4>
+    <?php if (empty($tasks)): ?>
+        <p class="empty-state">No tasks in this range.</p>
+        <?php return; ?>
+    <?php endif; ?>
+    <table class="report-table">
+        <thead><tr><th>Tech</th><th>Job</th><th>Start</th><th>End</th><th>Hours</th><th>Notes</th></tr></thead>
+        <tbody>
+            <?php foreach ($tasks as $task): ?>
+            <tr>
+                <td><?= h($task['tech_name']) ?></td>
+                <td><?= h($task['job_name']) ?></td>
+                <td><?= h(fmtDt($task['start_time'])) ?></td>
+                <td><?= $task['end_time'] ? h(fmtDt($task['end_time'])) : '<em>in progress</em>' ?></td>
+                <td><?= fmtHours($task['hours']) ?></td>
+                <td class="notes-cell"><?= $task['notes'] ? h(mb_strimwidth($task['notes'], 0, 160, '…')) : '' ?></td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    <form method="post" action="admin.php" class="csv-form">
+        <input type="hidden" name="action" value="export-tasks-by-date-csv">
+        <input type="hidden" name="token" value="">
+        <input type="hidden" name="start_date" value="<?= h($s) ?>">
+        <input type="hidden" name="end_date" value="<?= h($e) ?>">
+        <button type="submit" class="btn btn-ghost btn-sm">Export CSV</button>
+    </form>
+    <?php
+}
+
+// Tasks within a date range as CSV
+function exportTasksByDateCsv($start, $end) {
+    list($s, $e) = resolveDateRange($start, $end);
+    if ($s === null) {
+        http_response_code(400);
+        echo 'Invalid date range';
+        return;
+    }
+    $tasks = reportTasksByDateRange($s, $e);
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="tasks-' . $s . ($s === $e ? '' : "_to_$e") . '.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['Tech', 'Job', 'Start', 'End', 'Hours', 'Notes']);
+    foreach ($tasks as $task) {
+        fputcsv($out, [
+            $task['tech_name'],
+            $task['job_name'],
+            $task['start_time'],
+            $task['end_time'],
+            $task['hours'] !== null ? round((float)$task['hours'], 2) : '',
+            $task['notes'],
+        ]);
+    }
+    fclose($out);
 }
 
 function csvFilename($base) {

@@ -528,6 +528,32 @@ check "tech report shows task" 'Smith - 412 Oak Ave' "$OUT"
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-tech-csv' --data-urlencode 'tech=Tim' --data-urlencode "month=$MONTH")
 check "tech CSV export" 'Tech,Job,Start,End,Hours,Notes' "$OUT"
 
+# --- Tasks by Date report ---
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-reports')
+check "reports page has Tasks by Date panel" 'Tasks by Date' "$OUT"
+check "tasks-by-date panel has date inputs" 'name="start_date"' "$OUT"
+# Single day via From only (To defaults to From): the Smith task is on 2026-06-05
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=report-tasks-by-date' --data-urlencode 'start_date=2026-06-05' --data-urlencode 'end_date=')
+check "tasks-by-date: From-only pulls that day" 'Smith - 412 Oak Ave' "$OUT"
+# Single day via To only (From defaults to To)
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=report-tasks-by-date' --data-urlencode 'start_date=' --data-urlencode 'end_date=2026-06-05')
+check "tasks-by-date: To-only pulls that day" 'Smith - 412 Oak Ave' "$OUT"
+# A single day excludes tasks on other days (Fin's task is 2026-06-20)
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=report-tasks-by-date' --data-urlencode 'start_date=2026-06-20' --data-urlencode 'end_date=2026-06-20')
+check "tasks-by-date: single day shows that day's task" 'Fin - 8 Fir' "$OUT"
+if [[ "$OUT" == *'Smith - 412 Oak Ave'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - tasks-by-date single day excludes other days"
+else
+    PASS=$((PASS+1)); echo "ok   - tasks-by-date single day excludes other days"
+fi
+# A range spans multiple days
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=report-tasks-by-date' --data-urlencode 'start_date=2026-06-01' --data-urlencode 'end_date=2026-06-30')
+check "tasks-by-date: range includes early day" 'Smith - 412 Oak Ave' "$OUT"
+check "tasks-by-date: range includes later day" 'Fin - 8 Fir' "$OUT"
+# CSV export
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=export-tasks-by-date-csv' --data-urlencode 'start_date=2026-06-05' --data-urlencode 'end_date=')
+check "tasks-by-date CSV export" 'Tech,Job,Start,End,Hours,Notes' "$OUT"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

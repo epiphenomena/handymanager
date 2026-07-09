@@ -1057,3 +1057,19 @@ function reportTasksForTech($techName, $month) {
     $stmt->execute(['tech_name' => $techName, 'month' => $month]);
     return $stmt->fetchAll();
 }
+
+// All tasks whose start date falls within [$startDate, $endDate] (inclusive,
+// 'YYYY-MM-DD'), across every tech and job (including clock in/out), with job
+// names, oldest first.
+function reportTasksByDateRange($startDate, $endDate) {
+    $pdo = getDbConnection();
+    $stmt = $pdo->prepare("
+        SELECT t.*, j.name AS job_name, j.is_system AS job_is_system,
+               (julianday(t.end_time) - julianday(t.start_time)) * 24.0 AS hours
+        FROM tasks t JOIN jobs j ON j.id = t.job_id
+        WHERE date(t.start_time) BETWEEN :start AND :end
+        ORDER BY t.start_time
+    ");
+    $stmt->execute(['start' => $startDate, 'end' => $endDate]);
+    return $stmt->fetchAll();
+}
