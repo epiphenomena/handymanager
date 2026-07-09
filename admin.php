@@ -200,19 +200,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($task['job_is_system']) {
                     renderClockView($_POST['clock_tech'] ?? '', $_POST['clock_month'] ?? '', 'Entry updated');
                 } else {
-                    renderJobDetail((int)$task['job_id'], 'Task updated');
+                    // Swap just the timeline + status-dates so the detail keeps its place
+                    renderJobTasksUpdate((int)$task['job_id']);
                 }
             }
+            break;
+
+        case 'job-timeline':
+            // Re-render just the timeline (used to cancel an inline task edit
+            // without reloading the whole detail).
+            renderJobTasksUpdate((int)$_POST['id']);
             break;
 
         case 'delete-task':
             $task = getTaskById((int)$_POST['task_id']);
             if ($task) {
+                $jobId = (int)$task['job_id'];
+                $isClock = (bool)$task['job_is_system'];
                 deleteTask($task['id']);
-                if ($task['job_is_system']) {
-                    renderClockView($_POST['clock_tech'] ?? '', $_POST['clock_month'] ?? '', 'Entry deleted');
+                if ($isClock) {
+                    // Swap just the clock list + summary so the list keeps its place
+                    renderClockListUpdate($_POST['clock_tech'] ?? '', $_POST['clock_month'] ?? '');
                 } else {
-                    renderJobDetail((int)$task['job_id'], 'Task deleted');
+                    renderJobTasksUpdate($jobId);
                 }
             }
             break;
@@ -547,10 +557,6 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
         return;
     }
     $tasks = getTasksForJob($jobId);
-    $totalHours = 0;
-    foreach ($tasks as $task) {
-        $totalHours += (float)($task['hours'] ?? 0);
-    }
     $job['task_count'] = count($tasks); // for jobTransitions resume target
     $backGroup = 'active';
     foreach (STATUS_GROUPS as $g => $statuses) {
@@ -594,14 +600,7 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
 
     <div id="job-text-slot"></div>
 
-    <div class="status-dates">
-        <span>Opened <?= h(fmtDt($job['opened_at'])) ?></span>
-        <?php if ($job['ready_for_billing_at']): ?><span>Ready for billing <?= h(fmtDate($job['ready_for_billing_at'])) ?></span><?php endif; ?>
-        <?php if ($job['billed_at']): ?><span>Billed <?= h(fmtDate($job['billed_at'])) ?></span><?php endif; ?>
-        <?php if ($job['paid_at']): ?><span>Paid <?= h(fmtDate($job['paid_at'])) ?></span><?php endif; ?>
-        <?php if ($job['closed_at']): ?><span>Closed <?= h(fmtDate($job['closed_at'])) ?></span><?php endif; ?>
-        <span><?= count($tasks) ?> task<?= count($tasks) === 1 ? '' : 's' ?>, <?= fmtHours($totalHours) ?></span>
-    </div>
+    <?php renderJobStatusDates($job, $tasks); ?>
 
     <?php renderAdminNotes($job); ?>
 
@@ -615,7 +614,41 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
         <?php endif; ?>
     </div>
     <div id="add-task-slot"></div>
-    <div class="timeline">
+    <?php renderJobTimeline($job, $tasks); ?>
+
+    <div class="danger-zone">
+        <button class="btn btn-danger btn-sm" hx-post="admin.php" hx-target="#content"
+            hx-confirm="Delete this job AND all of its tasks? This cannot be undone."
+            hx-vals='<?= h(json_encode(['action' => 'delete-job', 'id' => (int)$job['id'], 'group' => $backGroup])) ?>'>Delete Job</button>
+    </div>
+    <?php
+}
+
+// The job's status/date line, including the task count + total hours (which
+// change when tasks are added/edited/deleted). $oob updates it in place from a
+// partial response so it stays correct without re-rendering the whole detail.
+function renderJobStatusDates($job, $tasks, $oob = false) {
+    $totalHours = 0;
+    foreach ($tasks as $task) {
+        $totalHours += (float)($task['hours'] ?? 0);
+    }
+    ?>
+    <div class="status-dates" id="job-status-dates"<?= $oob ? ' hx-swap-oob="true"' : '' ?>>
+        <span>Opened <?= h(fmtDt($job['opened_at'])) ?></span>
+        <?php if ($job['ready_for_billing_at']): ?><span>Ready for billing <?= h(fmtDate($job['ready_for_billing_at'])) ?></span><?php endif; ?>
+        <?php if ($job['billed_at']): ?><span>Billed <?= h(fmtDate($job['billed_at'])) ?></span><?php endif; ?>
+        <?php if ($job['paid_at']): ?><span>Paid <?= h(fmtDate($job['paid_at'])) ?></span><?php endif; ?>
+        <?php if ($job['closed_at']): ?><span>Closed <?= h(fmtDate($job['closed_at'])) ?></span><?php endif; ?>
+        <span><?= count($tasks) ?> task<?= count($tasks) === 1 ? '' : 's' ?>, <?= fmtHours($totalHours) ?></span>
+    </div>
+    <?php
+}
+
+// The job timeline (its own #job-timeline element so task add/edit/delete can
+// swap just this region and keep the admin's scroll place).
+function renderJobTimeline($job, $tasks) {
+    ?>
+    <div class="timeline" id="job-timeline">
         <?php foreach ($tasks as $task): ?>
         <div class="timeline-item">
             <div class="timeline-item-head">
@@ -627,7 +660,7 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
                 <span class="timeline-item-actions">
                     <button class="btn btn-ghost btn-xs" hx-post="admin.php" hx-target="closest .timeline-item" hx-swap="outerHTML"
                         hx-vals='{"action":"task-edit-form","task_id":<?= (int)$task['id'] ?>}'>Edit</button>
-                    <button class="btn btn-danger btn-xs" hx-post="admin.php" hx-target="#content"
+                    <button class="btn btn-danger btn-xs" hx-post="admin.php" hx-target="#job-timeline" hx-swap="outerHTML"
                         hx-confirm="Delete this task? This cannot be undone."
                         hx-vals='{"action":"delete-task","task_id":<?= (int)$task['id'] ?>}'>Delete</button>
                 </span>
@@ -656,13 +689,20 @@ function renderJobDetail($jobId, $message = null, $isError = false) {
             </div>
         </div>
     </div>
-
-    <div class="danger-zone">
-        <button class="btn btn-danger btn-sm" hx-post="admin.php" hx-target="#content"
-            hx-confirm="Delete this job AND all of its tasks? This cannot be undone."
-            hx-vals='<?= h(json_encode(['action' => 'delete-job', 'id' => (int)$job['id'], 'group' => $backGroup])) ?>'>Delete Job</button>
-    </div>
     <?php
+}
+
+// Partial re-render after a task change: swap the timeline (main) and refresh
+// the status-dates (task count/hours) out-of-band, so the detail's scroll
+// position is preserved. Returns nothing if the job is gone.
+function renderJobTasksUpdate($jobId) {
+    $job = getJobById($jobId);
+    if (!$job) {
+        return;
+    }
+    $tasks = getTasksForJob($jobId);
+    renderJobTimeline($job, $tasks);
+    renderJobStatusDates($job, $tasks, true);
 }
 
 // A checkbox per tag in the curated vocabulary (no free-text - tags are
@@ -737,18 +777,13 @@ function renderJobEditForm($jobId) {
 }
 
 function renderClockView($tech = '', $month = '', $message = null, $isError = false) {
-    $tasks = getClockTasks($tech, $month);
     $techs = getTechNames();
     $months = getClockTaskMonths();
-    $totalHours = 0;
-    foreach ($tasks as $task) {
-        $totalHours += (float)($task['hours'] ?? 0);
-    }
     ?>
     <?= flash($message, $isError) ?>
     <div class="view-header">
         <h2>Clock In/Out</h2>
-        <span class="muted"><?= count($tasks) ?> entr<?= count($tasks) === 1 ? 'y' : 'ies' ?>, <?= fmtHours($totalHours) ?></span>
+        <?php renderClockSummary($tech, $month); ?>
     </div>
 
     <form class="form-row report-controls" hx-post="admin.php" hx-target="#content" hx-trigger="change">
@@ -771,11 +806,32 @@ function renderClockView($tech = '', $month = '', $message = null, $isError = fa
         </label>
     </form>
 
+    <?php renderClockList($tech, $month); ?>
+    <?php
+}
+
+// The clock entry count + total hours (its own id so a delete can refresh it
+// out-of-band).
+function renderClockSummary($tech, $month, $oob = false) {
+    $tasks = getClockTasks($tech, $month);
+    $totalHours = 0;
+    foreach ($tasks as $task) {
+        $totalHours += (float)($task['hours'] ?? 0);
+    }
+    ?>
+    <span class="muted" id="clock-summary"<?= $oob ? ' hx-swap-oob="true"' : '' ?>><?= count($tasks) ?> entr<?= count($tasks) === 1 ? 'y' : 'ies' ?>, <?= fmtHours($totalHours) ?></span>
+    <?php
+}
+
+// The clock entries table (its own #clock-list element so deleting an entry can
+// swap just this region and keep the admin's scroll place).
+function renderClockList($tech, $month) {
+    $tasks = getClockTasks($tech, $month);
+    ?>
+    <div id="clock-list">
     <?php if (empty($tasks)): ?>
         <p class="empty-state">No clock in/out entries<?= $tech !== '' || $month !== '' ? ' for this filter' : '' ?>.</p>
-        <?php return; ?>
-    <?php endif; ?>
-
+    <?php else: ?>
     <table class="report-table">
         <thead><tr><th>Tech</th><th>Start</th><th>End</th><th>Hours</th><th>Notes</th><th></th></tr></thead>
         <tbody>
@@ -789,7 +845,7 @@ function renderClockView($tech = '', $month = '', $message = null, $isError = fa
                 <td>
                     <button class="btn btn-ghost btn-xs" hx-post="admin.php" hx-target="#content"
                         hx-vals='<?= h(json_encode(['action' => 'task-edit-form', 'task_id' => (int)$task['id'], 'clock_tech' => $tech, 'clock_month' => $month])) ?>'>Edit</button>
-                    <button class="btn btn-danger btn-xs" hx-post="admin.php" hx-target="#content"
+                    <button class="btn btn-danger btn-xs" hx-post="admin.php" hx-target="#clock-list" hx-swap="outerHTML"
                         hx-confirm="Delete this clock entry? This cannot be undone."
                         hx-vals='<?= h(json_encode(['action' => 'delete-task', 'task_id' => (int)$task['id'], 'clock_tech' => $tech, 'clock_month' => $month])) ?>'>Delete</button>
                 </td>
@@ -797,7 +853,16 @@ function renderClockView($tech = '', $month = '', $message = null, $isError = fa
             <?php endforeach; ?>
         </tbody>
     </table>
+    <?php endif; ?>
+    </div>
     <?php
+}
+
+// Partial re-render after deleting a clock entry: swap the list (main) and
+// refresh the summary out-of-band, preserving scroll place.
+function renderClockListUpdate($tech, $month) {
+    renderClockList($tech, $month);
+    renderClockSummary($tech, $month, true);
 }
 
 function renderTaskAddForm($jobId) {
@@ -859,7 +924,10 @@ function renderTaskEditForm($taskId, $clockTech = '', $clockMonth = '') {
     $isClock = (bool)$task['job_is_system'];
     ?>
     <div class="timeline-item timeline-editing">
-        <form class="form-stack" hx-post="admin.php" hx-target="#content">
+        <?php // Job tasks save into the timeline region (keeps scroll place);
+              // clock entries re-render the clock view (its own flow). ?>
+        <form class="form-stack" hx-post="admin.php"
+            hx-target="<?= $isClock ? '#content' : '#job-timeline' ?>" hx-swap="<?= $isClock ? 'innerHTML' : 'outerHTML' ?>">
             <input type="hidden" name="action" value="save-task">
             <input type="hidden" name="task_id" value="<?= (int)$task['id'] ?>">
             <?php if ($isClock): // return to the filtered clock view after saving ?>
@@ -892,8 +960,8 @@ function renderTaskEditForm($taskId, $clockTech = '', $clockMonth = '') {
                 <button type="button" class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#content"
                     hx-vals='<?= h(json_encode(['action' => 'view-clock', 'tech' => $clockTech, 'month' => $clockMonth])) ?>'>Cancel</button>
                 <?php else: ?>
-                <button type="button" class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#content"
-                    hx-vals='{"action":"view-job","id":<?= (int)$task['job_id'] ?>}'>Cancel</button>
+                <button type="button" class="btn btn-ghost btn-sm" hx-post="admin.php" hx-target="#job-timeline" hx-swap="outerHTML"
+                    hx-vals='{"action":"job-timeline","id":<?= (int)$task['job_id'] ?>}'>Cancel</button>
                 <?php endif; ?>
             </div>
         </form>

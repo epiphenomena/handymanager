@@ -133,7 +133,11 @@ check "running task blocks ready-for-billing" 'Tasks still in progress: Joe' "$O
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=save-task' --data-urlencode "task_id=$TASK2_ID" \
     --data-urlencode 'tech_name=Joe' --data-urlencode 'start_date=2026-06-06' --data-urlencode 'start_time=08:00' \
     --data-urlencode 'end_date=2026-06-06' --data-urlencode 'end_time=10:30' --data-urlencode 'notes=Patched drywall')
-check "admin can add end time to task" 'Task updated' "$OUT"
+# Saving a task swaps just the timeline region (keeps scroll place) and refreshes
+# the status-dates aggregate out-of-band - not a whole-detail re-render.
+check "save task returns the timeline fragment" 'id="job-timeline"' "$OUT"
+check "save task refreshes hours aggregate (OOB)" 'id="job-status-dates" hx-swap-oob="true"' "$OUT"
+check "saved task shows in the timeline" 'Patched drywall' "$OUT"
 
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=set-status' --data-urlencode "id=$JOB2_ID" --data-urlencode 'status=ready_for_billing')
 check "ready-for-billing works after end time set" 'Ready for Billing' "$OUT"
@@ -346,6 +350,34 @@ check "clock job cannot be marked for billing" 'cannot change status' "$OUT"
 
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=view-job' --data-urlencode "id=$CLOCK_ID")
 check "clock job detail redirects to clock view" 'Clock In/Out' "$OUT"
+
+# Deleting a clock entry swaps just the list (keeps scroll place) and refreshes
+# the summary out-of-band - not a whole-view re-render.
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=delete-task' --data-urlencode "task_id=$CLOCK_TASK_ID" --data-urlencode 'clock_tech=' --data-urlencode 'clock_month=')
+check "clock delete returns the list fragment" 'id="clock-list"' "$OUT"
+check "clock delete refreshes summary (OOB)" 'id="clock-summary" hx-swap-oob="true"' "$OUT"
+if [[ "$OUT" == *'loaded truck'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - deleted clock entry removed from the list"
+else
+    PASS=$((PASS+1)); echo "ok   - deleted clock entry removed from the list"
+fi
+
+# Deleting a task from a job timeline swaps just the timeline + refreshes the
+# status-dates aggregate out-of-band (keeps scroll place).
+post log-call.php "{\"token\":\"$ADMIN\",\"customer_name\":\"Deltask\",\"location\":\"9 Zed\"}" >/dev/null
+DT_JOB=$(post get-open-jobs.php "{\"token\":\"$TOKEN\",\"tech_name\":\"Tim\"}" | php -r '$d=json_decode(stream_get_contents(STDIN),true); foreach($d["jobs"] as $j) if(strpos($j["name"],"Deltask")!==false){echo $j["id"];break;}')
+form --data-urlencode "token=$ADMIN" --data-urlencode 'action=add-task' --data-urlencode "id=$DT_JOB" \
+    --data-urlencode 'tech_name=Tim' --data-urlencode 'start_date=2026-06-10' --data-urlencode 'start_time=09:00' \
+    --data-urlencode 'end_date=2026-06-10' --data-urlencode 'end_time=10:00' --data-urlencode 'notes=to-be-deleted' >/dev/null
+DT_TASK=$(HANDYMANAGER_DB="$DB" php -r "require 'database.php'; echo getDbConnection()->query(\"SELECT id FROM tasks WHERE notes='to-be-deleted'\")->fetchColumn();")
+OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=delete-task' --data-urlencode "task_id=$DT_TASK")
+check "job task delete returns the timeline fragment" 'id="job-timeline"' "$OUT"
+check "job task delete refreshes aggregate (OOB)" 'id="job-status-dates" hx-swap-oob="true"' "$OUT"
+if [[ "$OUT" == *'to-be-deleted'* ]]; then
+    FAIL=$((FAIL+1)); echo "FAIL - deleted task removed from the timeline"
+else
+    PASS=$((PASS+1)); echo "ok   - deleted task removed from the timeline"
+fi
 
 # --- Tags: curated vocabulary, assignment, list filtering, cascade ---
 OUT=$(form --data-urlencode "token=$ADMIN" --data-urlencode 'action=manage-tags')
